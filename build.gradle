@@ -1,0 +1,21 @@
+plugins {
+    id 'groovy'
+    id 'java-gradle-plugin'
+    id 'maven-publish'
+}
+
+group = 'com.github.fcat97'
+version = '0.1-SNAPSHOT'
+
+gradlePlugin {
+    plugins {
+        dotenvGenerator {
+            id = 'com.github.fcat97.dotenv-generator'
+            implementationClass = 'com.github.fcat97.DotEnvGeneratorPlugin'
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
