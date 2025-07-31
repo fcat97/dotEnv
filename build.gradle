@@ -10,8 +10,8 @@ version = '0.1-SNAPSHOT'
 gradlePlugin {
     plugins {
         dotenvGenerator {
-            id = 'com.github.fcat97.dotenv-generator'
-            implementationClass = 'com.github.fcat97.DotEnvGeneratorPlugin'
+            id = 'com.github.fcat97.dotenv'
+            implementationClass = 'com.github.fcat97.DotEnvPlugin'
         }
     }
 }

@@ -28,7 +28,7 @@ This is particularly useful for modularized Android or Java projects where each 
   IDE code completion works out of the box for generated constants.
 
 - **Customizable namespace:**  
-  By default, each module’s class is in `dotenv.{module-name}.DotEnv`, but you can override the package for your needs.
+  By default, each module’s class is in `dotenv.{module-name}.DotEnv`, but you can override the namespace for your needs.
 
 - **No risk of leaking secrets between modules:**  
   Each module only has access to its own `.env` values.
@@ -42,7 +42,7 @@ This is particularly useful for modularized Android or Java projects where each 
 - **Supports primitives**: Recognizes boolean, long, double, and generates appropriately typed fields.
 - **List support**: Recognizes JSON-style and comma-separated lists and creates a `String[]` field.
 - **Namespace per module**: Each module gets its own DotEnv class in a unique package.
-- **Customizable package name**: Override the namespace via plugin configuration.
+- **Customizable namespace**: Override the package via plugin configuration.
 - **No runtime dependency**: All values are constants in the generated class.
 
 ---
@@ -55,8 +55,8 @@ Add to your module-level `build.gradle`:
 
 ```groovy
 plugins {
-  id 'java' // or 'com.android.library' or 'com.android.application'
-  id 'com.github.fcat97.dotenv-generator'
+    id 'java' // or 'com.android.library' or 'com.android.application'
+    id 'com.github.fcat97.dotenv'
 }
 ```
 
@@ -64,11 +64,11 @@ plugins {
 
 By default, the generated class will be in `dotenv.{module-name}` (e.g. `dotenv.app` for module `app`).
 
-You can override this by specifying the `packageName` in a `dotenvGenerator` block:
+You can override this by specifying the `namespace` in a `dotenv` block:
 
 ```groovy
-dotenvGenerator {
-  packageName = "com.example.mydotenv"
+dotenv {
+    namespace = "com.example.mydotenv"
 }
 ```
 
@@ -94,9 +94,9 @@ On build, the plugin generates:
 ```
 build/generated/dotenv/src/main/java/dotenv/{module-name}/DotEnv.java
 ```
-or, if you specified a custom package:
+or, if you specified a custom namespace:
 ```
-build/generated/dotenv/src/main/java/{custom/package}/DotEnv.java
+build/generated/dotenv/src/main/java/{custom/namespace}/DotEnv.java
 ```
 
 ### 5. Use in your code
@@ -107,7 +107,7 @@ import dotenv.app.DotEnv; // for module 'app'
 import dotenv.feature_login.DotEnv; // for module 'feature_login'
 ```
 
-If you set a custom package:
+If you set a custom namespace:
 ```java
 import com.example.mydotenv.DotEnv;
 ```
@@ -186,7 +186,7 @@ For real-time regeneration, set up an IDE or OS file watcher to run the `generat
 - If the `DotEnv` class isn't found, try:
   - Cleaning and rebuilding the project.
   - Ensuring the `.env` file exists in the module root.
-  - Checking `build/generated/dotenv/src/main/java/{your/package}/DotEnv.java` for the generated file.
+  - Checking `build/generated/dotenv/src/main/java/{your/namespace}/DotEnv.java` for the generated file.
 - If using Kotlin, you can access constants the same way as in Java.
 
 ---

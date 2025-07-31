@@ -5,15 +5,16 @@ import org.gradle.api.tasks.*
 import com.squareup.javapoet.*
 import javax.lang.model.element.Modifier
 
-class DotEnvGeneratorExtension {
+class DotEnvExtension {
+    // Use 'namespace' for custom package, default is 'dotenv.{project-name}'
     String namespace = null
 }
 
-class DotEnvGeneratorPlugin implements Plugin<Project> {
+class DotEnvPlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {
         // Register extension for user configuration
-        def extension = project.extensions.create("dotenvGenerator", DotEnvGeneratorExtension)
+        def extension = project.extensions.create("dotenv", DotEnvExtension)
 
         def outputDir = new File(project.buildDir, "generated/dotenv/src/main/java")
         def envFilePath = new File(project.projectDir, ".env").absolutePath
