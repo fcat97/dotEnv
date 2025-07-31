@@ -5,15 +5,32 @@ import org.gradle.api.tasks.*
 import com.squareup.javapoet.*
 import javax.lang.model.element.Modifier
 
+class DotEnvGeneratorExtension {
+    String namespace = null
+}
+
 class DotEnvGeneratorPlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {
+        // Register extension for user configuration
+        def extension = project.extensions.create("dotenvGenerator", DotEnvGeneratorExtension)
+
         def outputDir = new File(project.buildDir, "generated/dotenv/src/main/java")
         def envFilePath = new File(project.projectDir, ".env").absolutePath
 
         project.tasks.register('generateDotEnv', GenerateDotEnvTask) { task ->
             task.envFilePath = envFilePath
             task.outputDir = outputDir.absolutePath
+            task.getNamespace = { ->
+                // Determine namespace: user config or default
+                if (extension.namespace) {
+                    return extension.namespace
+                } else {
+                    // Default: dotenv.{project-name}, sanitize for java package
+                    def moduleName = project.name.replaceAll(/[^A-Za-z0-9_]/, "_")
+                    return "dotenv.${moduleName}"
+                }
+            }
         }
 
         project.plugins.withId('java') {
@@ -45,6 +62,9 @@ class GenerateDotEnvTask extends DefaultTask {
 
     @Input
     String outputDir
+
+    @Internal
+    Closure getNamespace
 
     @TaskAction
     void generate() {
@@ -125,13 +145,12 @@ class GenerateDotEnvTask extends DefaultTask {
             }
         }
 
-        JavaFile javaFile = JavaFile.builder("dotenv", classBuilder.build()).build()
-        File packageDir = new File(outputDir, "dotenv")
-        packageDir.mkdirs()
-        File outputFile = new File(packageDir, "DotEnv.java")
-        outputFile.withWriter('UTF-8') { writer ->
-            javaFile.writeTo(writer)
-        }
-        logger.lifecycle("Generated: ${outputFile.absolutePath}")
+        String namespace = getNamespace()
+        JavaFile javaFile = JavaFile.builder(namespace, classBuilder.build()).build()
+        File outputRoot = new File(outputDir)
+        outputRoot.mkdirs()
+        javaFile.writeTo(outputRoot)
+
+        logger.lifecycle("Generated: ${outputDir}/${namespace.replace('.', '/')}/DotEnv.java")
     }
 }
