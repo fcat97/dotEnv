@@ -1,4 +1,4 @@
-package com.github.fcat97
+package io.github.fcat97
 
 import org.gradle.api.*
 import org.gradle.api.tasks.*
@@ -6,14 +6,12 @@ import com.squareup.javapoet.*
 import javax.lang.model.element.Modifier
 
 class DotEnvExtension {
-    // Use 'namespace' for custom package, default is 'dotenv.{project-name}'
     String namespace = null
 }
 
 class DotEnvPlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {
-        // Register extension for user configuration
         def extension = project.extensions.create("dotenv", DotEnvExtension)
 
         def outputDir = new File(project.buildDir, "generated/dotenv/src/main/java")
@@ -23,11 +21,9 @@ class DotEnvPlugin implements Plugin<Project> {
             task.envFilePath = envFilePath
             task.outputDir = outputDir.absolutePath
             task.getNamespace = { ->
-                // Determine namespace: user config or default
                 if (extension.namespace) {
                     return extension.namespace
                 } else {
-                    // Default: dotenv.{project-name}, sanitize for java package
                     def moduleName = project.name.replaceAll(/[^A-Za-z0-9_]/, "_")
                     return "dotenv.${moduleName}"
                 }
@@ -84,12 +80,10 @@ class GenerateDotEnvTask extends DefaultTask {
             def (key, value) = line.split('=', 2)
             key = key.trim().replaceAll(/[^A-Za-z0-9_]/, "_").toUpperCase()
             value = value.trim()
-            // Remove surrounding double quotes if present
             if (value.startsWith('"') && value.endsWith('"') && value.length() >= 2) {
                 value = value.substring(1, value.length() - 1)
             }
 
-            // List detection
             boolean isList = false
             def items = []
             if (value.startsWith('[') && value.endsWith(']')) {
@@ -102,7 +96,6 @@ class GenerateDotEnvTask extends DefaultTask {
             }
 
             if (isList) {
-                // String[] constant
                 CodeBlock.Builder arrayInit = CodeBlock.builder().add("{")
                 items.eachWithIndex { v, idx ->
                     arrayInit.add("\$S", v)
@@ -115,29 +108,25 @@ class GenerateDotEnvTask extends DefaultTask {
                         .build()
                 )
             } else if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) {
-                // Boolean constant
                 classBuilder.addField(FieldSpec.builder(boolean.class, key)
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                         .initializer(value.toLowerCase())
                         .build()
                 )
             } else if (value ==~ /^-?\d+[lL]?$/) {
-                // Long constant
-                def longVal = value.replaceAll(/[lL]$/, '') // remove L suffix if any
+                def longVal = value.replaceAll(/[lL]$/, '')
                 classBuilder.addField(FieldSpec.builder(long.class, key)
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                         .initializer(longVal + 'L')
                         .build()
                 )
             } else if (value ==~ /^-?\d*\.\d+([eE][+-]?\d+)?$/) {
-                // Double constant
                 classBuilder.addField(FieldSpec.builder(double.class, key)
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                         .initializer(value)
                         .build()
                 )
             } else {
-                // String constant
                 classBuilder.addField(FieldSpec.builder(String, key)
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                         .initializer("\$S", value)

@@ -2,19 +2,31 @@ plugins {
     id 'groovy'
     id 'java-gradle-plugin'
     id 'maven-publish'
+    id 'com.gradle.plugin-publish' version '1.3.1'
 }
 
-group = 'com.github.fcat97'
-version = '0.1-SNAPSHOT'
+group = 'io.github.fcat97'
+version = '0.9.0'
 
 gradlePlugin {
+    website = 'https://github.com/fcat97/dotEnv'
+    vcsUrl = 'https://github.com/fcat97/dotEnv'
     plugins {
-        dotenvGenerator {
-            id = 'com.github.fcat97.dotenv'
-            implementationClass = 'com.github.fcat97.DotEnvPlugin'
+        dotenvPlugin {
+            id = 'io.github.fcat97.dotenv'
+            implementationClass = 'io.github.fcat97.DotEnvPlugin'
+            displayName = 'DotEnv Gradle Plugin'
+            description = 'Generate a module-specific POJO class from .env file for Java and Android projects.'
+            tags.set(['dotenv', 'env', 'java', 'android', 'android-library', 'configuration'])
         }
     }
 }
+
+//pluginBundle {
+//    website = 'https://github.com/fcat97/dotEnv'
+//    vcsUrl = 'https://github.com/fcat97/dotEnv'
+//    // tags are set in gradlePlugin.plugins.dotenvPlugin.tags
+//}
 
 repositories {
     mavenCentral()
@@ -22,4 +34,15 @@ repositories {
 
 dependencies {
     implementation 'com.squareup:javapoet:1.13.0'
+    implementation gradleApi()
+    implementation localGroovy()
+}
+
+// Ensure correct source compatibility
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+// Optional: add javadoc/source jars for publishing
+tasks.withType(Jar) {
+    duplicatesStrategy = DuplicatesStrategy.WARN
 }
