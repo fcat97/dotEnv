@@ -56,7 +56,7 @@ Add to your module-level `build.gradle`:
 ```groovy
 plugins {
     id 'java' // or 'com.android.library' or 'com.android.application'
-    id 'com.github.fcat97.dotenv'
+    id 'io.github.fcat97.dotenv'
 }
 ```
 
