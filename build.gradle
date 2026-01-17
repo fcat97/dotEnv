@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.fcat97'
-version = '0.9.0'
+version = '0.9.1'
 
 gradlePlugin {
     website = 'https://github.com/fcat97/dotEnv'

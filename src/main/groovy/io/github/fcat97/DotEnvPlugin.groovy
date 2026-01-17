@@ -7,6 +7,7 @@ import javax.lang.model.element.Modifier
 
 class DotEnvExtension {
     String namespace = null
+    String envFilepath = ".env"
 }
 
 class DotEnvPlugin implements Plugin<Project> {
@@ -15,7 +16,7 @@ class DotEnvPlugin implements Plugin<Project> {
         def extension = project.extensions.create("dotenv", DotEnvExtension)
 
         def outputDir = new File(project.buildDir, "generated/dotenv/src/main/java")
-        def envFilePath = new File(project.projectDir, ".env").absolutePath
+        def envFilePath = new File(project.projectDir, extension.envFilepath).absolutePath
 
         project.tasks.register('generateDotEnv', GenerateDotEnvTask) { task ->
             task.envFilePath = envFilePath
