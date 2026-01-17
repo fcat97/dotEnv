@@ -1,6 +1,7 @@
 package io.github.fcat97
 
 import org.gradle.api.*
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.*
 import com.squareup.javapoet.*
 import javax.lang.model.element.Modifier
@@ -16,10 +17,9 @@ class DotEnvPlugin implements Plugin<Project> {
         def extension = project.extensions.create("dotenv", DotEnvExtension)
 
         def outputDir = new File(project.buildDir, "generated/dotenv/src/main/java")
-        def envFilePath = new File(project.projectDir, extension.envFilepath).absolutePath
 
         project.tasks.register('generateDotEnv', GenerateDotEnvTask) { task ->
-            task.envFilePath = envFilePath
+            task.envFilePath = project.provider { new File(project.projectDir, extension.envFilepath).absolutePath }
             task.outputDir = outputDir.absolutePath
             task.getNamespace = { ->
                 if (extension.namespace) {
@@ -56,7 +56,7 @@ class DotEnvPlugin implements Plugin<Project> {
 
 class GenerateDotEnvTask extends DefaultTask {
     @Input
-    String envFilePath
+    def envFilePath
 
     @Input
     String outputDir
@@ -66,9 +66,10 @@ class GenerateDotEnvTask extends DefaultTask {
 
     @TaskAction
     void generate() {
-        File envFile = new File(envFilePath)
+        String resolvedPath = envFilePath instanceof Provider ? envFilePath.get() : envFilePath
+        File envFile = new File(resolvedPath)
         if (!envFile.exists()) {
-            logger.lifecycle(".env file not found: ${envFilePath}. Skipping DotEnv generation.")
+            logger.lifecycle(".env file not found: ${resolvedPath}. Skipping DotEnv generation.")
             return
         }
 
