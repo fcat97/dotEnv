@@ -68,10 +68,13 @@ dotenv {
 
 **How it works:**
 - For each obfuscated field, a private helper class is generated alongside `DotEnv.java` with a random 8-hex-char name (e.g. `_a3f2b1c.java`). The class name and all values change on every build.
-- The helper uses three layers of obfuscation:
-  1. **Control Flow Flattening** — a `while` loop driven by a random state machine; state values (e.g. `7842 → 2341 → 5521`) are unique random ints that change every build
-  2. **Opaque Predicates** — real code is wrapped in always-true conditions (e.g. `(_op * _op) >= 0`); dead code sits under always-false conditions (e.g. `_op != _op`). `_op` is a random int seed embedded at build time
-  3. **Dead Code Injection** — unreachable blocks under always-false guards contain fake char computations, misleading `append()` calls, and occasional fake `return` statements
+- The helper uses a **Custom Virtual Machine** architecture with 4 hardening layers:
+
+  1. **Custom VM (Bytecode Interpreter)** — the string is encoded as a bytecode program (`int[] _pg`) with custom opcodes (`APPEND`, `NOP`, `FAKE_JMP`, `HALT`). Opcode values are randomized per build. A `while` loop with a program counter (`_pc`) interprets the encrypted bytecode. The reverse-engineer must first reverse the VM architecture before understanding the logic.
+  2. **XOR Encryption** — all program bytes (opcodes + operands) are XOR-encrypted at build time with a key derived from `ClassName.class.getName().hashCode()`. The key is never stored — it's derived at runtime from the class's own identity. This also acts as accidental anti-tampering: renaming the class (e.g. via ProGuard) breaks decryption.
+  3. **Mixed Boolean-Arithmetic (MBA)** — opcode comparisons use algebraically equivalent but hard-to-simplify expressions instead of simple `==`. Pool: `(x & C) + (x | C) == 2C` (bitwise identity), `((x - C) | (C - x)) >>> 31 == 0` (sign-bit trick), `x² + C² - 2xC == 0` (quadratic form), compound `>=` + `<=`. Randomly selected per comparison per build.
+  4. **Enriched Dead Code** — 6 patterns: fake char arithmetic, fake StringBuilder+return, misleading append, fake hash loops, fake array lookups, fake bitwise "decryption". Injected both as always-false guarded blocks in the interpreter dispatch and as fake VM opcodes (`NOP`, `FAKE_JMP`) interleaved in the encrypted program.
+
 - `DotEnv.java` delegates: `public static final String API_KEY = _a3f2b1c.get();`
 - Consumer API is unchanged. Only `String` fields can be obfuscated; listing a `boolean`, `long`, `double`, or `String[]` field fails the build.
 

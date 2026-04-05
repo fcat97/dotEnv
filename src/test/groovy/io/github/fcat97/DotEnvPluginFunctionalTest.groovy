@@ -302,7 +302,7 @@ class DotEnvPluginFunctionalTest {
     }
 
     @Test
-    void testObfuscatedHelperUsesStateMachinePattern() {
+    void testObfuscatedHelperUsesVmPattern() {
         writeSettings()
         writeBuildGradle("dotenv { obfuscate = ['KEY'] }")
         writeEnvFile('KEY=secret')
@@ -315,10 +315,35 @@ class DotEnvPluginFunctionalTest {
 
         assertNotNull('Helper class file should exist', helperFile)
         def content = helperFile.text
-        assertTrue('Helper should use a while loop (CFF)', content.contains('while'))
-        assertTrue('Helper should use a state variable (_st)', content.contains('_st'))
-        assertTrue('Helper should embed an opaque predicate seed (_op)', content.contains('_op'))
+        assertTrue('Helper should use while loop (VM interpreter)', content.contains('while'))
+        assertTrue('Helper should use program counter (_pc)', content.contains('_pc'))
+        assertTrue('Helper should have encrypted program array (_pg)', content.contains('_pg'))
+        assertTrue('Helper should decrypt opcodes (_oc)', content.contains('_oc'))
+        assertTrue('Helper should derive key from class name', content.contains('.class.getName().hashCode()'))
+        assertTrue('Helper should embed opaque predicate seed (_op)', content.contains('_op'))
         assertFalse('Plain secret must not appear in helper class', content.contains('secret'))
+    }
+
+    @Test
+    void testObfuscatedHelperUsesMbaExpressions() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['KEY'] }")
+        writeEnvFile('KEY=test')
+
+        runTask()
+
+        def genDir = new File(testProjectDir.root,
+            'build/generated/dotenv/src/main/java/dotenv/test_project')
+        def helperFile = genDir.listFiles().find { it.name =~ /^_[a-f0-9]{8}\.java$/ }
+
+        assertNotNull('Helper class file should exist', helperFile)
+        def content = helperFile.text
+        // Should NOT contain simple opcode equality like `_oc == 42`
+        assertFalse('Helper should not use simple opcode equality',
+            (content =~ /_oc\s*==\s*\d+/).find())
+        // Should contain MBA indicators (bitwise ops in comparisons)
+        assertTrue('Helper should use MBA expressions (>>> or compound bitwise)',
+            content.contains('>>>') || (content =~ /\(_oc [&|] \d+\) \+/).find())
     }
 
     @Test
