@@ -67,11 +67,13 @@ dotenv {
 ```
 
 **How it works:**
-- For each obfuscated field, a private helper class is generated alongside `DotEnv.java` with a random 8-hex-char name (e.g. `_a3f2b1c.java`). The class name and all arithmetic operands change on every build.
-- The helper's `get()` method reconstructs the secret character-by-character via 3-step random arithmetic — no string literal appears in the bytecode.
+- For each obfuscated field, a private helper class is generated alongside `DotEnv.java` with a random 8-hex-char name (e.g. `_a3f2b1c.java`). The class name and all values change on every build.
+- The helper uses three layers of obfuscation:
+  1. **Control Flow Flattening** — a `while` loop driven by a random state machine; state values (e.g. `7842 → 2341 → 5521`) are unique random ints that change every build
+  2. **Opaque Predicates** — real code is wrapped in always-true conditions (e.g. `(_op * _op) >= 0`); dead code sits under always-false conditions (e.g. `_op != _op`). `_op` is a random int seed embedded at build time
+  3. **Dead Code Injection** — unreachable blocks under always-false guards contain fake char computations, misleading `append()` calls, and occasional fake `return` statements
 - `DotEnv.java` delegates: `public static final String API_KEY = _a3f2b1c.get();`
-- Consumer API is unchanged: `DotEnv.API_KEY` still returns `String`.
-- Only `String` fields can be obfuscated. Listing a `boolean`, `long`, `double`, or `String[]` field fails the build with a clear error.
+- Consumer API is unchanged. Only `String` fields can be obfuscated; listing a `boolean`, `long`, `double`, or `String[]` field fails the build.
 
 **Limitations:** the arithmetic key is embedded in the bytecode, so a determined reverse-engineer can still recover values — obfuscation makes it non-trivial, not impossible.
 

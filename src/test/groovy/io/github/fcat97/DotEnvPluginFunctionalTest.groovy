@@ -302,6 +302,26 @@ class DotEnvPluginFunctionalTest {
     }
 
     @Test
+    void testObfuscatedHelperUsesStateMachinePattern() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['KEY'] }")
+        writeEnvFile('KEY=secret')
+
+        runTask()
+
+        def genDir = new File(testProjectDir.root,
+            'build/generated/dotenv/src/main/java/dotenv/test_project')
+        def helperFile = genDir.listFiles().find { it.name =~ /^_[a-f0-9]{8}\.java$/ }
+
+        assertNotNull('Helper class file should exist', helperFile)
+        def content = helperFile.text
+        assertTrue('Helper should use a while loop (CFF)', content.contains('while'))
+        assertTrue('Helper should use a state variable (_st)', content.contains('_st'))
+        assertTrue('Helper should embed an opaque predicate seed (_op)', content.contains('_op'))
+        assertFalse('Plain secret must not appear in helper class', content.contains('secret'))
+    }
+
+    @Test
     void testObfuscatingNonStringFieldFailsTheBuild() {
         writeSettings()
         writeBuildGradle("dotenv { obfuscate = ['IS_PROD'] }")

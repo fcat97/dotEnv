@@ -184,18 +184,113 @@ class GenerateDotEnvTask extends DefaultTask {
         (1..length).collect { chars[rng.nextInt(chars.size())] }.join('')
     }
 
+    /** Generates {@code count} unique random ints in [1000, 9999] as CFF state identifiers. */
+    protected List<Integer> generateUniqueStates(Random rng, int count) {
+        Set<Integer> seen = new HashSet<>()
+        List<Integer> states = []
+        while (states.size() < count) {
+            int v = rng.nextInt(9000) + 1000
+            if (seen.add(v)) states << v
+        }
+        states
+    }
+
+    /** Returns a random expression that is mathematically always true. */
+    protected String randomAlwaysTruePredicate(Random rng) {
+        def pool = [
+            '(_op * _op) >= 0',
+            '(_op | ~_op) == -1',
+            '(_op ^ 0) == _op',
+            '(_op - _op) == 0',
+        ]
+        pool[rng.nextInt(pool.size())]
+    }
+
+    /** Returns a random expression that is mathematically always false. */
+    protected String randomAlwaysFalsePredicate(Random rng) {
+        def pool = [
+            '_op * 0 != 0',
+            '(_op & 0) != 0',
+            '_op != _op',
+            '(_op ^ _op) != 0',
+        ]
+        pool[rng.nextInt(pool.size())]
+    }
+
+    /** Injects an unreachable code block guarded by an always-false opaque predicate. */
+    protected void injectDeadCode(Random rng, MethodSpec.Builder method) {
+        method.beginControlFlow('if ($L)', randomAlwaysFalsePredicate(rng))
+        switch (rng.nextInt(3)) {
+            case 0:
+                // Fake char computation — wrong result, never executed
+                int fakeA = rng.nextInt(13) + 2
+                int fakeB = rng.nextInt(13) + 2
+                method.addStatement('int _d = $L', fakeA)
+                method.addStatement('_d = _d * $L', fakeB)
+                method.addStatement('_s.append((char) _d)')
+                break
+            case 1:
+                // Fake StringBuilder + misleading return
+                method.addStatement('$T _f = new $T()', StringBuilder.class, StringBuilder.class)
+                method.addStatement('_f.append((char) $L)', rng.nextInt(26) + 65)
+                method.addStatement('return _f.toString()')
+                break
+            default:
+                // Simple misleading direct append
+                method.addStatement('_s.append((char) $L)', rng.nextInt(26) + 65)
+                break
+        }
+        method.endControlFlow()
+    }
+
+    /**
+     * Generates a helper class whose {@code get()} method reconstructs {@code value} via:
+     *  1. Control Flow Flattening  — while loop driven by random state machine
+     *  2. Opaque Predicates        — real code wrapped in always-true conditions
+     *  3. Dead Code Injection      — unreachable blocks under always-false conditions
+     */
     protected TypeSpec generateObfuscatedClass(Random rng, String className, String value) {
+        char[] chars = value.toCharArray()
+        int n = chars.length
+
+        List<Integer> states = generateUniqueStates(rng, n + 1)
+        int terminalState = states[n]
+        int opSeed = rng.nextInt(9000) + 1000
+
         MethodSpec.Builder method = MethodSpec.methodBuilder("get")
                 .addModifiers(Modifier.STATIC)
                 .returns(String.class)
 
         method.addStatement('$T _s = new $T()', StringBuilder.class, StringBuilder.class)
+        method.addStatement('int _st = $L', states[0])
+        method.addStatement('int _op = $L', opSeed)
 
-        value.toCharArray().eachWithIndex { char ch, int idx ->
+        method.beginControlFlow('while (_st != $L)', terminalState)
+
+        chars.eachWithIndex { char ch, int idx ->
+            if (idx == 0) {
+                method.beginControlFlow('if (_st == $L)', states[idx])
+            } else {
+                method.nextControlFlow('else if (_st == $L)', states[idx])
+            }
+
+            // Real computation wrapped in always-true opaque predicate
+            method.beginControlFlow('if ($L)', randomAlwaysTruePredicate(rng))
             String varName = "_v${idx}"
             method.addCode(generateCharExpr(rng, (int) ch, varName))
             method.addStatement('_s.append((char) $L)', varName)
+            method.endControlFlow()
+
+            // Dead code under always-false predicate (50 % chance per char)
+            if (rng.nextBoolean()) {
+                injectDeadCode(rng, method)
+            }
+
+            method.addStatement('_st = $L', states[idx + 1])
         }
+
+        method.endControlFlow()  // closes if / else-if chain
+        method.endControlFlow()  // closes while
 
         method.addStatement('return _s.toString()')
 
