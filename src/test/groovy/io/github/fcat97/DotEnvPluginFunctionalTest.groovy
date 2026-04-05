@@ -117,15 +117,19 @@ class DotEnvPluginFunctionalTest {
     }
 
     @Test
-    void testMissingEnvFileSkipsGenerationGracefully() {
+    void testMissingEnvFileFailsTheBuild() {
         writeSettings()
         writeBuildGradle()
         // intentionally no .env file
 
-        def result = runTask()
+        def result = GradleRunner.create()
+            .withProjectDir(testProjectDir.root)
+            .withArguments('generateDotEnv', '--stacktrace')
+            .withPluginClasspath()
+            .buildAndFail()
 
-        assertEquals(TaskOutcome.SUCCESS, result.task(':generateDotEnv').outcome)
-        assertTrue('Should log a skip message', result.output.contains('.env file not found'))
+        assertEquals(TaskOutcome.FAILED, result.task(':generateDotEnv').outcome)
+        assertTrue('Should report missing .env file', result.output.contains('.env file not found'))
     }
 
     @Test

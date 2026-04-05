@@ -69,8 +69,7 @@ class GenerateDotEnvTask extends DefaultTask {
         String resolvedPath = envFilePath instanceof Provider ? envFilePath.get() : envFilePath
         File envFile = new File(resolvedPath)
         if (!envFile.exists()) {
-            logger.lifecycle(".env file not found: ${resolvedPath}. Skipping DotEnv generation.")
-            return
+            throw new GradleException(".env file not found: ${resolvedPath}. Create a .env file in the module root or set 'envFilepath' in the dotenv block.")
         }
 
         def lines = envFile.readLines().findAll { it && !it.startsWith('#') && it.contains('=') }
