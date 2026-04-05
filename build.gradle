@@ -36,6 +36,9 @@ dependencies {
     implementation 'com.squareup:javapoet:1.13.0'
     implementation gradleApi()
     implementation localGroovy()
+
+    testImplementation gradleTestKit()
+    testImplementation 'junit:junit:4.13.2'
 }
 
 // Ensure correct source compatibility

@@ -1,0 +1,66 @@
+# Copilot Instructions
+
+## Project Overview
+
+This is a **Gradle plugin** (`io.github.fcat97.dotenv`) written in Groovy. It generates a `DotEnv.java` class at build time from a module's `.env` file, making environment variables available as typed `public static final` constants.
+
+## Build & Publish
+
+```bash
+# Build
+./gradlew build
+
+# Publish to Gradle Plugin Portal (requires GRADLE_PUBLISH_KEY + GRADLE_PUBLISH_SECRET)
+./gradlew publishPlugins
+```
+
+There are no tests in this project. The build pipeline runs on GitHub Actions and publishes on GitHub release events.
+
+## Architecture
+
+The entire plugin lives in a single file:
+**`src/main/groovy/io/github/fcat97/DotEnvPlugin.groovy`**
+
+It contains three classes:
+
+- **`DotEnvExtension`** – DSL config block (`namespace`, `envFilepath`). Applied via `project.extensions.create("dotenv", DotEnvExtension)`.
+- **`DotEnvPlugin`** – Registers the `generateDotEnv` task and hooks it into `compileJava` (Java projects) or `preBuild` (Android projects) depending on which plugin is applied.
+- **`GenerateDotEnvTask`** – Reads the `.env` file, parses each line, infers the Java type, and uses [JavaPoet](https://github.com/square/javapoet) to write `DotEnv.java` to `build/generated/dotenv/src/main/java/`.
+
+## Key Conventions
+
+### Type inference logic (in `GenerateDotEnvTask.generate()`)
+Values are matched in this priority order:
+1. Starts with `[` / ends with `]` → `String[]` (JSON-style list)
+2. Contains `,` → `String[]` (comma-separated list)
+3. `true` / `false` (case-insensitive) → `boolean`
+4. Regex `/^-?\d+[lL]?$/` → `long`
+5. Regex `/^-?\d*\.\d+([eE][+-]?\d+)?$/` → `double`
+6. Everything else → `String`
+
+### Namespace resolution
+Default: `dotenv.{module-name}` where the module name is sanitized with `replaceAll(/[^A-Za-z0-9_]/, "_")`.  
+Override via `dotenv { namespace = "com.example.myenv" }` in the module's `build.gradle`.
+
+### Generated output path
+```
+build/generated/dotenv/src/main/java/{namespace/as/path}/DotEnv.java
+```
+
+### `.env` parsing rules
+- Lines starting with `#` are ignored (comments)
+- Lines without `=` are ignored
+- Double-quoted string values have quotes stripped
+- Keys are uppercased and non-alphanumeric characters replaced with `_`
+
+### Code generation
+All Java source generation uses **JavaPoet** (`com.squareup:javapoet:1.13.0`). Do not generate Java source via string concatenation — use `FieldSpec`, `TypeSpec`, `JavaFile`, and `CodeBlock` builders.
+
+### Plugin compatibility
+The plugin hooks into three plugin IDs: `java`, `com.android.library`, `com.android.application`. Any new target platforms must register their own `project.plugins.withId(...)` block.
+
+### Java compatibility
+Source and target compatibility is set to **Java 8** (`VERSION_1_8`).
+
+### Stict Rule
+- Do not commit without human review
