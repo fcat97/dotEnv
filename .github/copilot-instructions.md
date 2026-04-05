@@ -56,11 +56,33 @@ build/generated/dotenv/src/main/java/{namespace/as/path}/DotEnv.java
 ### Code generation
 All Java source generation uses **JavaPoet** (`com.squareup:javapoet:1.13.0`). Do not generate Java source via string concatenation — use `FieldSpec`, `TypeSpec`, `JavaFile`, and `CodeBlock` builders.
 
+## Obfuscation
+
+Sensitive fields can be obfuscated so the secret never appears as a string literal anywhere in compiled output.
+
+```groovy
+dotenv {
+    obfuscate = ["API_KEY", "TOKEN"]   // field names as they appear in DotEnv.java
+}
+```
+
+**How it works:**
+- For each obfuscated field, a private helper class is generated alongside `DotEnv.java` with a random 8-hex-char name (e.g. `_a3f2b1c.java`). The class name and all arithmetic operands change on every build.
+- The helper's `get()` method reconstructs the secret character-by-character via 3-step random arithmetic — no string literal appears in the bytecode.
+- `DotEnv.java` delegates: `public static final String API_KEY = _a3f2b1c.get();`
+- Consumer API is unchanged: `DotEnv.API_KEY` still returns `String`.
+- Only `String` fields can be obfuscated. Listing a `boolean`, `long`, `double`, or `String[]` field fails the build with a clear error.
+
+**Limitations:** the arithmetic key is embedded in the bytecode, so a determined reverse-engineer can still recover values — obfuscation makes it non-trivial, not impossible.
+
 ### Plugin compatibility
 The plugin hooks into three plugin IDs: `java`, `com.android.library`, `com.android.application`. Any new target platforms must register their own `project.plugins.withId(...)` block.
 
 ### Java compatibility
 Source and target compatibility is set to **Java 8** (`VERSION_1_8`).
+
+### Groovy + Gradle decoration pitfall
+Helper methods called from within closures inside a `@TaskAction` must be `protected`, not `private`. Gradle wraps task classes in a `_Decorated` proxy and routes property/method access through the MOP — `private` members become invisible. Similarly, never store mutable state (e.g. `Random`) as a task field; create it as a local variable inside `@TaskAction` and pass it as a parameter.
 
 ### Stict Rule
 - Do not commit without human review

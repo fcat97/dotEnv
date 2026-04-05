@@ -9,6 +9,7 @@ import javax.lang.model.element.Modifier
 class DotEnvExtension {
     String namespace = null
     String envFilepath = ".env"
+    List<String> obfuscate = []
 }
 
 class DotEnvPlugin implements Plugin<Project> {
@@ -29,6 +30,7 @@ class DotEnvPlugin implements Plugin<Project> {
                     return "dotenv.${moduleName}"
                 }
             }
+            task.obfuscatedFields = project.provider { extension.obfuscate ?: [] }
         }
 
         project.plugins.withId('java') {
@@ -64,18 +66,30 @@ class GenerateDotEnvTask extends DefaultTask {
     @Internal
     Closure getNamespace
 
+    @Input
+    def obfuscatedFields = []
+
     @TaskAction
     void generate() {
+        Random rng = new Random()
         String resolvedPath = envFilePath instanceof Provider ? envFilePath.get() : envFilePath
         File envFile = new File(resolvedPath)
         if (!envFile.exists()) {
             throw new GradleException(".env file not found: ${resolvedPath}. Create a .env file in the module root or set 'envFilepath' in the dotenv block.")
         }
 
+        List<String> toObfuscate = ((obfuscatedFields instanceof Provider
+            ? obfuscatedFields.get()
+            : obfuscatedFields) ?: []) as List<String>
+
         def lines = envFile.readLines().findAll { it && !it.startsWith('#') && it.contains('=') }
 
         TypeSpec.Builder classBuilder = TypeSpec.classBuilder("DotEnv")
                 .addModifiers(Modifier.PUBLIC)
+
+        String namespace = getNamespace()
+        File outputRoot = new File(outputDir)
+        outputRoot.mkdirs()
 
         lines.each { line ->
             def (key, value) = line.split('=', 2)
@@ -84,6 +98,8 @@ class GenerateDotEnvTask extends DefaultTask {
             if (value.startsWith('"') && value.endsWith('"') && value.length() >= 2) {
                 value = value.substring(1, value.length() - 1)
             }
+
+            boolean shouldObfuscate = toObfuscate.contains(key)
 
             boolean isList = false
             def items = []
@@ -96,7 +112,28 @@ class GenerateDotEnvTask extends DefaultTask {
                 items = value.split(',').collect { it.trim() }
             }
 
-            if (isList) {
+            boolean isString = !isList &&
+                !value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false") &&
+                !(value ==~ /^-?\d+[lL]?$/) &&
+                !(value ==~ /^-?\d*\.\d+([eE][+-]?\d+)?$/)
+
+            if (shouldObfuscate && !isString) {
+                throw new GradleException(
+                    "Cannot obfuscate field '${key}': only String fields can be obfuscated, " +
+                    "but '${key}' resolved to a non-String type. " +
+                    "Remove '${key}' from the obfuscate list or change its value to a plain string."
+                )
+            }
+
+            if (shouldObfuscate) {
+                String helperName = "_" + generateRandomHex(rng, 8)
+                JavaFile.builder(namespace, generateObfuscatedClass(rng, helperName, value)).build().writeTo(outputRoot)
+                classBuilder.addField(FieldSpec.builder(String, key)
+                        .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                        .initializer('$L.get()', helperName)
+                        .build()
+                )
+            } else if (isList) {
                 CodeBlock.Builder arrayInit = CodeBlock.builder().add("{")
                 items.eachWithIndex { v, idx ->
                     arrayInit.add("\$S", v)
@@ -136,12 +173,58 @@ class GenerateDotEnvTask extends DefaultTask {
             }
         }
 
-        String namespace = getNamespace()
-        JavaFile javaFile = JavaFile.builder(namespace, classBuilder.build()).build()
-        File outputRoot = new File(outputDir)
-        outputRoot.mkdirs()
-        javaFile.writeTo(outputRoot)
-
+        JavaFile.builder(namespace, classBuilder.build()).build().writeTo(outputRoot)
         logger.lifecycle("Generated: ${outputDir}/${namespace.replace('.', '/')}/DotEnv.java")
+    }
+
+    // ── obfuscation helpers ──────────────────────────────────────────────────
+
+    protected String generateRandomHex(Random rng, int length) {
+        def chars = ('a'..'f') + ('0'..'9')
+        (1..length).collect { chars[rng.nextInt(chars.size())] }.join('')
+    }
+
+    protected TypeSpec generateObfuscatedClass(Random rng, String className, String value) {
+        MethodSpec.Builder method = MethodSpec.methodBuilder("get")
+                .addModifiers(Modifier.STATIC)
+                .returns(String.class)
+
+        method.addStatement('$T _s = new $T()', StringBuilder.class, StringBuilder.class)
+
+        value.toCharArray().eachWithIndex { char ch, int idx ->
+            String varName = "_v${idx}"
+            method.addCode(generateCharExpr(rng, (int) ch, varName))
+            method.addStatement('_s.append((char) $L)', varName)
+        }
+
+        method.addStatement('return _s.toString()')
+
+        TypeSpec.classBuilder(className)
+                .addModifiers(Modifier.FINAL)
+                .addMethod(method.build())
+                .build()
+    }
+
+    /**
+     * Generates a 3-step arithmetic expression that evaluates to {@code c}.
+     * Operands are chosen randomly so the expression differs on every build.
+     *   int _vN = a;
+     *   _vN = _vN * b;
+     *   _vN = _vN +/- remainder;  →  _vN == c
+     */
+    protected CodeBlock generateCharExpr(Random rng, int c, String varName) {
+        int a = rng.nextInt(13) + 2   // 2–14
+        int b = rng.nextInt(13) + 2   // 2–14
+        int remainder = c - (a * b)
+
+        CodeBlock.Builder block = CodeBlock.builder()
+        block.addStatement('int $L = $L', varName, a)
+        block.addStatement('$L = $L * $L', varName, varName, b)
+        if (remainder >= 0) {
+            block.addStatement('$L = $L + $L', varName, varName, remainder)
+        } else {
+            block.addStatement('$L = $L - $L', varName, varName, Math.abs(remainder))
+        }
+        block.build()
     }
 }

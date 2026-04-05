@@ -241,6 +241,125 @@ class DotEnvPluginFunctionalTest {
     }
 
     @Test
+    void testObfuscatedValueDeobfuscatesCorrectlyAtRuntime() {
+        writeSettings()
+        writeBuildGradle("""
+            dotenv { obfuscate = ['SECRET', 'ANOTHER'] }
+            task verifyObfuscation(type: JavaExec, dependsOn: classes) {
+                classpath = sourceSets.main.runtimeClasspath
+                mainClass = 'Verify'
+            }
+        """)
+        writeEnvFile("SECRET=hello-world-123\nANOTHER=foo\$bar!baz")
+
+        def srcDir = new File(testProjectDir.root, 'src/main/java')
+        srcDir.mkdirs()
+        new File(srcDir, 'Verify.java').text = """\
+            public class Verify {
+                public static void main(String[] args) {
+                    System.out.println(dotenv.test_project.DotEnv.SECRET);
+                    System.out.println(dotenv.test_project.DotEnv.ANOTHER);
+                }
+            }
+        """.stripIndent()
+
+        def result = GradleRunner.create()
+            .withProjectDir(testProjectDir.root)
+            .withArguments('verifyObfuscation', '--stacktrace')
+            .withPluginClasspath()
+            .build()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(':verifyObfuscation').outcome)
+        assertTrue('SECRET must deobfuscate to original value at runtime',
+            result.output.contains('hello-world-123'))
+        assertTrue('ANOTHER must deobfuscate to original value at runtime',
+            result.output.contains('foo$bar!baz'))
+    }
+
+    @Test
+    void testObfuscatedFieldDelegatesAndCompilesSuccessfully() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['API_KEY'] }")
+        writeEnvFile("API_KEY=super-secret\nPLAIN=visible")
+
+        def result = GradleRunner.create()
+            .withProjectDir(testProjectDir.root)
+            .withArguments('compileJava', '--stacktrace')
+            .withPluginClasspath()
+            .build()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(':generateDotEnv').outcome)
+        assertEquals(TaskOutcome.SUCCESS, result.task(':compileJava').outcome)
+
+        def dotEnvContent = generatedFileContent()
+        // DotEnv.java must NOT contain the plain secret
+        assertFalse('Plain secret must not appear in DotEnv.java', dotEnvContent.contains('super-secret'))
+        // Must delegate to a helper class via a method call
+        assertTrue('DotEnv.java must contain a helper delegation call',
+            (dotEnvContent =~ /_[a-f0-9]{8}\.get\(\)/).find())
+        // Non-obfuscated field must still be a plain literal
+        assertTrue(dotEnvContent.contains('String PLAIN = "visible"'))
+    }
+
+    @Test
+    void testObfuscatingNonStringFieldFailsTheBuild() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['IS_PROD'] }")
+        writeEnvFile('IS_PROD=true')
+
+        def result = GradleRunner.create()
+            .withProjectDir(testProjectDir.root)
+            .withArguments('generateDotEnv', '--stacktrace')
+            .withPluginClasspath()
+            .buildAndFail()
+
+        assertEquals(TaskOutcome.FAILED, result.task(':generateDotEnv').outcome)
+        assertTrue('Should report that only String fields can be obfuscated',
+            result.output.contains("Cannot obfuscate field 'IS_PROD'"))
+    }
+
+    @Test
+    void testObfuscatedOutputDiffersAcrossBuilds() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['SECRET'] }")
+        writeEnvFile('SECRET=my-secret-value')
+
+        runTask()
+        def call1 = (generatedFileContent() =~ /_[a-f0-9]{8}\.get\(\)/)[0]
+
+        // Clean build output and rebuild
+        new File(testProjectDir.root, 'build').deleteDir()
+        runTask()
+        def call2 = (generatedFileContent() =~ /_[a-f0-9]{8}\.get\(\)/)[0]
+
+        assertNotNull('First build should have an obfuscated call', call1)
+        assertNotNull('Second build should have an obfuscated call', call2)
+        assertNotEquals('Helper class name must differ between builds', call1, call2)
+    }
+
+    @Test
+    void testNonObfuscatedFieldsUnaffectedWhenObfuscateListIsPresent() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['SECRET'] }")
+        writeEnvFile("""\
+            SECRET=hidden
+            API_URL="https://api.example.com"
+            TIMEOUT=3000
+            IS_DEBUG=true
+        """.stripIndent())
+
+        runTask()
+
+        def content = generatedFileContent()
+        // Plain fields must still be literals
+        assertTrue(content.contains('String API_URL = "https://api.example.com"'))
+        assertTrue(content.contains('long TIMEOUT = 3000L'))
+        assertTrue(content.contains('boolean IS_DEBUG = true'))
+        // Obfuscated field must not be a literal
+        assertFalse(content.contains('"hidden"'))
+    }
+
+    @Test
     void testGenerateDotEnvRunsBeforeCompileJava() {
         writeSettings()
         writeBuildGradle()
