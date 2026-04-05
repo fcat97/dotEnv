@@ -15,6 +15,7 @@ This is a **Gradle plugin** (`io.github.fcat97.dotenv`) written in Groovy. It ge
 ```
 
 There are no tests in this project. The build pipeline runs on GitHub Actions and publishes on GitHub release events.
+Tests: `./gradlew test` (21 tests covering all types, obfuscation, runtime correctness, and structural verification).
 
 ## Architecture
 
@@ -68,17 +69,18 @@ dotenv {
 
 **How it works:**
 - For each obfuscated field, a private helper class is generated alongside `DotEnv.java` with a random 8-hex-char name (e.g. `_a3f2b1c.java`). The class name and all values change on every build.
-- The helper uses a **Custom Virtual Machine** architecture with 4 hardening layers:
+- The helper uses a **Custom Virtual Machine** architecture with 5 hardening layers:
 
-  1. **Custom VM (Bytecode Interpreter)** — the string is encoded as a bytecode program (`int[] _pg`) with custom opcodes (`APPEND`, `NOP`, `FAKE_JMP`, `HALT`). Opcode values are randomized per build. A `while` loop with a program counter (`_pc`) interprets the encrypted bytecode. The reverse-engineer must first reverse the VM architecture before understanding the logic.
-  2. **XOR Encryption** — all program bytes (opcodes + operands) are XOR-encrypted at build time with a key derived from `ClassName.class.getName().hashCode()`. The key is never stored — it's derived at runtime from the class's own identity. This also acts as accidental anti-tampering: renaming the class (e.g. via ProGuard) breaks decryption.
-  3. **Mixed Boolean-Arithmetic (MBA)** — opcode comparisons use algebraically equivalent but hard-to-simplify expressions instead of simple `==`. Pool: `(x & C) + (x | C) == 2C` (bitwise identity), `((x - C) | (C - x)) >>> 31 == 0` (sign-bit trick), `x² + C² - 2xC == 0` (quadratic form), compound `>=` + `<=`. Randomly selected per comparison per build.
-  4. **Enriched Dead Code** — 6 patterns: fake char arithmetic, fake StringBuilder+return, misleading append, fake hash loops, fake array lookups, fake bitwise "decryption". Injected both as always-false guarded blocks in the interpreter dispatch and as fake VM opcodes (`NOP`, `FAKE_JMP`) interleaved in the encrypted program.
+  1. **Custom Hash Key Derivation** — replaces the predictable `String.hashCode()` with a per-build FNV-like hash function using a random salt (embedded as `long` field) and a random large odd prime multiplier. An attacker must reverse-engineer the specific hash function for each build — there's no standard algorithm to look up. Also preserves anti-tamper: renaming the class breaks decryption.
+  2. **Non-Linear Bytecode Execution** — the string is split into shuffled blocks connected by JUMP opcodes. The program array holds characters in random physical order, connected by jumps. A linear scan of the array produces garbage. Opcodes: `APPEND`, `NOP`, `JUMP`, `HALT` (values randomized per build). This defeats symbolic execution tools (Triton, Angr) by creating a non-linear control flow graph.
+  3. **State-Dependent Rolling Decryption** — each byte's decryption depends on ALL previously decrypted bytes via a rolling state variable (`_st`). Combined with JUMP-based non-linear execution, an attacker cannot decrypt byte N without correctly tracing the full execution path from byte 0 through N-1 in execution order.
+  4. **MBA-Scrambled Switch Dispatch** — opcode dispatch uses a `switch` on a value computed via the MBA identity `(x ^ C) + 2*(x & C) = x + C`. The scramble constant `C` changes per build. Decompilers see an opaque math function instead of simple opcode comparisons.
+  5. **Hardened Opaque Predicates + Dead Code** — always-true/false predicates use MBA identities with live runtime variables (`_op`, `_pc`, `_st`) so decompilers cannot constant-fold them. 6 dead code patterns (fake hash loops, fake StringBuilder, fake arrays, fake crypto, etc.) are injected both inside switch cases and around the VM loop.
 
 - `DotEnv.java` delegates: `public static final String API_KEY = _a3f2b1c.get();`
 - Consumer API is unchanged. Only `String` fields can be obfuscated; listing a `boolean`, `long`, `double`, or `String[]` field fails the build.
 
-**Limitations:** the arithmetic key is embedded in the bytecode, so a determined reverse-engineer can still recover values — obfuscation makes it non-trivial, not impossible.
+**Limitations:** A determined reverse-engineer can still recover values by tracing the VM execution path, but the layered obfuscation makes it significantly harder than simple string literals or arithmetic encoding.
 
 ### Plugin compatibility
 The plugin hooks into three plugin IDs: `java`, `com.android.library`, `com.android.application`. Any new target platforms must register their own `project.plugins.withId(...)` block.

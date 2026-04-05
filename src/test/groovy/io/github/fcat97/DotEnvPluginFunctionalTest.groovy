@@ -318,9 +318,14 @@ class DotEnvPluginFunctionalTest {
         assertTrue('Helper should use while loop (VM interpreter)', content.contains('while'))
         assertTrue('Helper should use program counter (_pc)', content.contains('_pc'))
         assertTrue('Helper should have encrypted program array (_pg)', content.contains('_pg'))
-        assertTrue('Helper should decrypt opcodes (_oc)', content.contains('_oc'))
-        assertTrue('Helper should derive key from class name', content.contains('.class.getName().hashCode()'))
+        assertTrue('Helper should decrypt via _raw variable', content.contains('_raw'))
+        assertTrue('Helper should use rolling state (_st)', content.contains('_st'))
+        assertTrue('Helper should derive key via custom hash (not hashCode)',
+            content.contains('.class.getName().getBytes()'))
+        assertTrue('Helper should use Integer.rotateLeft for key rotation',
+            content.contains('Integer.rotateLeft'))
         assertTrue('Helper should embed opaque predicate seed (_op)', content.contains('_op'))
+        assertTrue('Helper should use switch dispatch', content.contains('switch'))
         assertFalse('Plain secret must not appear in helper class', content.contains('secret'))
     }
 
@@ -338,12 +343,15 @@ class DotEnvPluginFunctionalTest {
 
         assertNotNull('Helper class file should exist', helperFile)
         def content = helperFile.text
-        // Should NOT contain simple opcode equality like `_oc == 42`
+        // Should contain MBA scrambled dispatch (_sv variable)
+        assertTrue('Helper should use MBA-scrambled dispatch (_sv)',
+            content.contains('_sv'))
+        // Should contain MBA indicators (XOR + AND compound expressions)
+        assertTrue('Helper should use MBA expressions (^ and & compound ops)',
+            (content =~ /\(_raw \^ \d+\) \+ 2 \* \(_raw & \d+\)/).find())
+        // Should NOT contain simple opcode equality like `_raw == 42`
         assertFalse('Helper should not use simple opcode equality',
-            (content =~ /_oc\s*==\s*\d+/).find())
-        // Should contain MBA indicators (bitwise ops in comparisons)
-        assertTrue('Helper should use MBA expressions (>>> or compound bitwise)',
-            content.contains('>>>') || (content =~ /\(_oc [&|] \d+\) \+/).find())
+            (content =~ /_raw\s*==\s*\d+/).find())
     }
 
     @Test
@@ -421,5 +429,86 @@ class DotEnvPluginFunctionalTest {
         def compileIndex = output.indexOf(':compileJava')
         assertTrue('generateDotEnv must appear before compileJava in task graph',
             generateIndex >= 0 && compileIndex >= 0 && generateIndex < compileIndex)
+    }
+
+    @Test
+    void testObfuscatedHelperUsesNonLinearJumps() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['KEY'] }")
+        writeEnvFile('KEY=abcdefghij')
+
+        runTask()
+
+        def genDir = new File(testProjectDir.root,
+            'build/generated/dotenv/src/main/java/dotenv/test_project')
+        def helperFile = genDir.listFiles().find { it.name =~ /^_[a-f0-9]{8}\.java$/ }
+
+        assertNotNull('Helper class file should exist', helperFile)
+        def content = helperFile.text
+        // JUMP target handling: _pc = _tgt (non-linear jump)
+        assertTrue('Helper should contain non-linear jump (_tgt assignment to _pc)',
+            content.contains('_pc = _tgt'))
+        // The program should not use simple hashCode()
+        assertFalse('Helper should NOT use String.hashCode()',
+            content.contains('.hashCode()'))
+        // Rolling state variable must be present
+        assertTrue('Helper should use rolling state (_st) for decryption',
+            content.contains('_st = (_st * 31'))
+    }
+
+    @Test
+    void testObfuscatedHelperUsesCustomHashNotHashCode() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['KEY'] }")
+        writeEnvFile('KEY=test')
+
+        runTask()
+
+        def genDir = new File(testProjectDir.root,
+            'build/generated/dotenv/src/main/java/dotenv/test_project')
+        def helperFile = genDir.listFiles().find { it.name =~ /^_[a-f0-9]{8}\.java$/ }
+
+        assertNotNull('Helper class file should exist', helperFile)
+        def content = helperFile.text
+        // Should use custom hash with byte iteration, not hashCode()
+        assertTrue('Helper should iterate over class name bytes',
+            content.contains('.class.getName().getBytes()'))
+        assertFalse('Helper must NOT use String.hashCode()',
+            content.contains('.hashCode()'))
+        // Should contain a long salt literal
+        assertTrue('Helper should contain a long salt constant',
+            (content =~ /long _ha = -?\d+L/).find())
+        // Should contain a long prime multiplier
+        assertTrue('Helper should contain a long prime multiplier',
+            (content =~ /_ha \*= -?\d+L/).find())
+    }
+
+    @Test
+    void testObfuscatedHelperUsesHardenedPredicates() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['KEY'] }")
+        writeEnvFile('KEY=test')
+
+        runTask()
+
+        def genDir = new File(testProjectDir.root,
+            'build/generated/dotenv/src/main/java/dotenv/test_project')
+        def helperFile = genDir.listFiles().find { it.name =~ /^_[a-f0-9]{8}\.java$/ }
+
+        assertNotNull('Helper class file should exist', helperFile)
+        def content = helperFile.text
+        // Hardened predicates use compound MBA with multiple live variables
+        // They should NOT use trivially-foldable patterns like (_op * 0 != 0)
+        assertFalse('Should not use trivially-foldable predicate (_op * 0)',
+            content.contains('_op * 0'))
+        assertFalse('Should not use trivially-foldable predicate (_op & 0)',
+            content.contains('(_op & 0)'))
+        assertFalse('Should not use trivially-foldable predicate (_op ^ 0)',
+            content.contains('(_op ^ 0)'))
+        // Should use MBA with two variables (e.g., _op and _pc or _st)
+        assertTrue('Should use hardened MBA predicates with multiple runtime variables',
+            content.contains('_op & _pc') || content.contains('_op & _st') ||
+            content.contains('_st ^ _op') || content.contains('_pc ^ _op') ||
+            content.contains('_st | _op') || content.contains('_pc | _op'))
     }
 }

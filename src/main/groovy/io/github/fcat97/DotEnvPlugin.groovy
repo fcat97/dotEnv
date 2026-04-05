@@ -191,52 +191,58 @@ class GenerateDotEnvTask extends DefaultTask {
         v
     }
 
-    /** XOR-encrypt/decrypt a single program value with a position-dependent key byte. */
-    protected int encryptByte(int key, int pos, int value) {
-        value ^ ((key >>> ((pos & 3) << 3)) & 0xFF)
+    /** Generate a random large odd number for use as a custom hash multiplier. */
+    protected long generateRandomPrime(Random rng) {
+        long p = rng.nextLong() | 1L
+        if (p < 0) p = ~p | 1L
+        if (p < 0x100000L) p += 0x100000L
+        return p
     }
 
-    /**
-     * Returns a boolean expression string that is true iff {@code varExpr == constant}.
-     * Uses Mixed Boolean-Arithmetic (MBA) to disguise the comparison.
-     */
-    protected String generateMbaEquality(Random rng, String v, int c) {
-        switch (rng.nextInt(4)) {
-            case 0: return "($v & $c) + ($v | $c) == ${c + c}"
-            case 1: return "(($v - $c) | ($c - $v)) >>> 31 == 0"
-            case 2: return "$v * $v + ${c * c} - 2 * $v * $c == 0"
-            default: return "($v & $c) + ($v | $c) >= ${c + c} && ($v & $c) + ($v | $c) <= ${c + c}"
+    /** Compute custom hash of a string using salt and prime (build-time mirror of runtime). */
+    protected int computeCustomHash(String input, long salt, long prime) {
+        long h = salt
+        for (byte b : input.getBytes()) {
+            h ^= (b & 0xFFL)
+            h *= prime
         }
+        return (int)(h ^ (h >>> 32))
     }
 
-    /** Returns a random expression that is mathematically always true. */
+    /** Encrypt/decrypt a single value using positional key rotation + rolling state. */
+    protected int encryptValue(int key, int pos, int state, int plain) {
+        int rotatedKey = Integer.rotateLeft(key, pos % 31)
+        int stateMask = state | (state << 16)
+        return plain ^ rotatedKey ^ stateMask
+    }
+
+    /** Returns a boolean expression that is always true, using MBA identities with live runtime variables. */
     protected String randomAlwaysTruePredicate(Random rng) {
         def pool = [
-            '(_op * _op) >= 0',
-            '(_op | ~_op) == -1',
-            '(_op ^ 0) == _op',
-            '(_op - _op) == 0',
+            '((_op ^ _pc) + 2 * (_op & _pc)) == (_op + _pc)',
+            '((_st | _op) - (_st ^ _op)) == (_st & _op)',
+            '((_pc & _op) + (_pc | _op)) == (_pc + _op)',
+            '((_op ^ _st) + 2 * (_op & _st)) == (_op + _st)',
         ]
         pool[rng.nextInt(pool.size())]
     }
 
-    /** Returns a random expression that is mathematically always false. */
+    /** Returns a boolean expression that is always false, using MBA identities with live runtime variables. */
     protected String randomAlwaysFalsePredicate(Random rng) {
         def pool = [
-            '_op * 0 != 0',
-            '(_op & 0) != 0',
-            '_op != _op',
-            '(_op ^ _op) != 0',
+            '((_op ^ _pc) + 2 * (_op & _pc)) != (_op + _pc)',
+            '((_st | _op) - (_st ^ _op)) != (_st & _op)',
+            '((_pc & _op) + (_pc | _op)) != (_pc + _op)',
+            '((_op ^ _st) + 2 * (_op & _st)) != (_op + _st)',
         ]
         pool[rng.nextInt(pool.size())]
     }
 
-    /** Injects an unreachable code block guarded by an always-false opaque predicate. */
+    /** Injects an unreachable code block guarded by a hardened always-false opaque predicate. */
     protected void injectDeadCode(Random rng, MethodSpec.Builder method) {
         method.beginControlFlow('if ($L)', randomAlwaysFalsePredicate(rng))
         switch (rng.nextInt(6)) {
             case 0:
-                // Fake char computation
                 int fakeA = rng.nextInt(13) + 2
                 int fakeB = rng.nextInt(13) + 2
                 method.addStatement('int _d = $L', fakeA)
@@ -244,32 +250,27 @@ class GenerateDotEnvTask extends DefaultTask {
                 method.addStatement('_s.append((char) _d)')
                 break
             case 1:
-                // Fake StringBuilder + misleading return
                 method.addStatement('$T _f = new $T()', StringBuilder.class, StringBuilder.class)
                 method.addStatement('_f.append((char) $L)', rng.nextInt(26) + 65)
                 method.addStatement('return _f.toString()')
                 break
             case 2:
-                // Simple misleading direct append
                 method.addStatement('_s.append((char) $L)', rng.nextInt(26) + 65)
                 break
             case 3:
-                // Fake hash loop
                 int loopBound = rng.nextInt(5) + 3
-                method.addStatement('int _h = $L', rng.nextInt(1000))
+                method.addStatement('int _dh = $L', rng.nextInt(1000))
                 method.beginControlFlow('for (int _i = 0; _i < $L; _i++)', loopBound)
-                method.addStatement('_h = (_h * 31 + _i) ^ _op')
+                method.addStatement('_dh = (_dh * 31 + _i) ^ _op')
                 method.endControlFlow()
-                method.addStatement('_s.append((char) (_h & 0x7F))')
+                method.addStatement('_s.append((char) (_dh & 0x7F))')
                 break
             case 4:
-                // Fake array lookup
                 method.addStatement('int[] _fa = {$L, $L, $L}', rng.nextInt(100), rng.nextInt(100), rng.nextInt(100))
                 method.addStatement('int _fi = _op % 3')
                 method.addStatement('_s.append((char) (_fa[_fi < 0 ? -_fi : _fi] + 32))')
                 break
             default:
-                // Fake bitwise "decryption"
                 method.addStatement('int _x = $L', rng.nextInt(0xFFFF))
                 method.addStatement('_x = (_x >>> 3) | (_x << 29)')
                 method.addStatement('_x = _x ^ $L', rng.nextInt(0xFFFF))
@@ -279,100 +280,276 @@ class GenerateDotEnvTask extends DefaultTask {
         method.endControlFlow()
     }
 
-    /**
-     * Builds the VM program: encodes the string as APPEND opcodes with interleaved
-     * NOP and FAKE_JMP dead opcodes. Returns the plain (unencrypted) program.
-     */
-    protected List<Integer> buildVmProgram(Random rng, String value, int appendOp, int nopOp, int fakeJmpOp, int haltOp) {
-        List<Integer> prog = []
-        for (char ch : value.toCharArray()) {
-            if (rng.nextBoolean()) {
-                prog << (rng.nextBoolean() ? nopOp : fakeJmpOp)
-                prog << rng.nextInt(256)
+    /** Returns a dead code block as raw Java code string (for use inside switch via addCode). */
+    protected String generateDeadCodeBlock(Random rng) {
+        def pred = randomAlwaysFalsePredicate(rng)
+        def sb = new StringBuilder()
+        sb.append("if (${pred}) {\n")
+        switch (rng.nextInt(6)) {
+            case 0:
+                int fakeA = rng.nextInt(13) + 2
+                int fakeB = rng.nextInt(13) + 2
+                sb.append("  int _d = ${fakeA};\n")
+                sb.append("  _d = _d * ${fakeB};\n")
+                sb.append("  _s.append((char) _d);\n")
+                break
+            case 1:
+                sb.append("  StringBuilder _f = new StringBuilder();\n")
+                sb.append("  _f.append((char) ${rng.nextInt(26) + 65});\n")
+                sb.append("  return _f.toString();\n")
+                break
+            case 2:
+                sb.append("  _s.append((char) ${rng.nextInt(26) + 65});\n")
+                break
+            case 3:
+                int loopBound = rng.nextInt(5) + 3
+                sb.append("  int _dh = ${rng.nextInt(1000)};\n")
+                sb.append("  for (int _i = 0; _i < ${loopBound}; _i++) {\n")
+                sb.append("    _dh = (_dh * 31 + _i) ^ _op;\n")
+                sb.append("  }\n")
+                sb.append("  _s.append((char) (_dh & 0x7F));\n")
+                break
+            case 4:
+                sb.append("  int[] _fa = {${rng.nextInt(100)}, ${rng.nextInt(100)}, ${rng.nextInt(100)}};\n")
+                sb.append("  int _fi = _op % 3;\n")
+                sb.append("  _s.append((char) (_fa[_fi < 0 ? -_fi : _fi] + 32));\n")
+                break
+            default:
+                sb.append("  int _x = ${rng.nextInt(0xFFFF)};\n")
+                sb.append("  _x = (_x >>> 3) | (_x << 29);\n")
+                sb.append("  _x = _x ^ ${rng.nextInt(0xFFFF)};\n")
+                sb.append("  _s.append((char) (_x & 0xFF));\n")
+                break
+        }
+        sb.append("}\n")
+        return sb.toString()
+    }
+
+    /** Simulate VM execution to determine position visit order (for state-dependent encryption). */
+    protected List<Integer> simulateExecution(List<Integer> program, int appendOp, int nopOp, int jumpOp, int haltOp) {
+        List<Integer> order = []
+        int pc = 0
+        int safety = 0
+        while (pc >= 0 && pc < program.size() && safety++ < 100000) {
+            order << pc
+            int op = program[pc]
+            if (op == jumpOp) {
+                pc++
+                order << pc
+                pc = program[pc]
+            } else if (op == appendOp || op == nopOp) {
+                pc++
+                order << pc
+                pc++
+            } else if (op == haltOp) {
+                break
+            } else {
+                pc++
             }
-            prog << appendOp
-            prog << (int) ch
         }
-        if (rng.nextBoolean()) {
-            prog << nopOp
-            prog << rng.nextInt(256)
-        }
-        prog << haltOp
-        prog
+        return order
     }
 
     /**
-     * Generates a helper class whose {@code get()} method reconstructs {@code value} via
-     * a custom VM interpreter with XOR-encrypted bytecode, MBA-hardened dispatch,
-     * opaque predicates, and dead code injection.
+     * Build scrambled VM program with JUMP opcodes for non-linear execution.
+     * Characters are split into shuffled blocks connected by JUMPs.
+     * Returns map with 'program' (plain values) and 'executionOrder' (visit indices).
+     */
+    protected Map buildScrambledProgram(Random rng, String value, int appendOp, int nopOp, int jumpOp, int haltOp) {
+        List<List<Integer>> blocks = []
+        char[] chars = value.toCharArray()
+        int i = 0
+        while (i < chars.length) {
+            List<Integer> block = []
+            int maxChunk = Math.min(3, chars.length - i)
+            int chunkSize = maxChunk <= 1 ? 1 : (1 + rng.nextInt(maxChunk))
+            for (int j = 0; j < chunkSize; j++) {
+                if (rng.nextInt(3) == 0) {
+                    block << nopOp
+                    block << rng.nextInt(256)
+                }
+                block << appendOp
+                block << (int) chars[i + j]
+            }
+            blocks << block
+            i += chunkSize
+        }
+
+        blocks << [haltOp]
+        int haltBlockIdx = blocks.size() - 1
+
+        List<Integer> physicalOrder = (0..<blocks.size()).collect()
+        Collections.shuffle(physicalOrder, rng)
+
+        // Calculate physical start positions (initial JUMP occupies positions 0-1)
+        int pos = 2
+        Map<Integer, Integer> blockStart = [:]
+        physicalOrder.each { blockIdx ->
+            blockStart[blockIdx] = pos
+            pos += blocks[blockIdx].size()
+            if (blockIdx != haltBlockIdx) {
+                pos += 2  // trailing JUMP + target
+            }
+        }
+
+        List<Integer> program = new ArrayList<>(Collections.nCopies(pos, 0))
+
+        // Initial JUMP → first logical block (block 0)
+        program[0] = jumpOp
+        program[1] = blockStart[0]
+
+        // Fill blocks and trailing JUMPs
+        physicalOrder.each { blockIdx ->
+            int p = blockStart[blockIdx]
+            blocks[blockIdx].eachWithIndex { val, idx -> program[p + idx] = val }
+            if (blockIdx != haltBlockIdx) {
+                int nextLogical = blockIdx + 1
+                int jmpPos = p + blocks[blockIdx].size()
+                program[jmpPos] = jumpOp
+                program[jmpPos + 1] = blockStart[nextLogical]
+            }
+        }
+
+        List<Integer> executionOrder = simulateExecution(program, appendOp, nopOp, jumpOp, haltOp)
+        return [program: program, executionOrder: executionOrder]
+    }
+
+    /** Encrypt program values following execution order with rolling state. */
+    protected List<Integer> encryptWithRollingState(List<Integer> plainProg, List<Integer> executionOrder, int key) {
+        // Default: XOR with key for unvisited positions (produces garbage if decoded)
+        List<Integer> encrypted = plainProg.collect { val -> val ^ Integer.rotateLeft(key, 0) }
+
+        int _st = 0
+        executionOrder.each { idx ->
+            int plain = plainProg[idx]
+            encrypted[idx] = encryptValue(key, idx, _st, plain)
+            _st = (_st * 31 + plain) & 0xFFFF
+        }
+        return encrypted
+    }
+
+    /**
+     * Generates a helper class with custom VM interpreter featuring:
+     * - Custom hash key derivation (replaces String.hashCode)
+     * - Non-linear bytecode execution via JUMP opcodes
+     * - State-dependent rolling decryption
+     * - MBA-scrambled switch dispatch
+     * - Hardened opaque predicates with live runtime variables
+     * - Dead code injection
      */
     protected TypeSpec generateObfuscatedClass(Random rng, String className, String value, String namespace) {
         Set<Integer> usedOps = new HashSet<>()
         int appendOp = uniqueRandomByte(rng, usedOps)
         int nopOp = uniqueRandomByte(rng, usedOps)
-        int fakeJmpOp = uniqueRandomByte(rng, usedOps)
+        int jumpOp = uniqueRandomByte(rng, usedOps)
         int haltOp = uniqueRandomByte(rng, usedOps)
 
         String fqcn = "${namespace}.${className}"
-        int xorKey = fqcn.hashCode()
-        List<Integer> plainProg = buildVmProgram(rng, value, appendOp, nopOp, fakeJmpOp, haltOp)
-        List<Integer> encProg = []
-        plainProg.eachWithIndex { b, idx -> encProg << encryptByte(xorKey, idx, b as int) }
+        long salt = rng.nextLong()
+        long prime = generateRandomPrime(rng)
+        int xorKey = computeCustomHash(fqcn, salt, prime)
+
+        def result = buildScrambledProgram(rng, value, appendOp, nopOp, jumpOp, haltOp)
+        List<Integer> plainProg = result.program
+        List<Integer> executionOrder = result.executionOrder
+
+        List<Integer> encProg = encryptWithRollingState(plainProg, executionOrder, xorKey)
 
         int opSeed = rng.nextInt(9000) + 1000
+        int scrambleConst = rng.nextInt(200) + 50
 
         MethodSpec.Builder method = MethodSpec.methodBuilder("get")
                 .addModifiers(Modifier.STATIC)
                 .returns(String.class)
 
         method.addStatement('$T _s = new $T()', StringBuilder.class, StringBuilder.class)
-        method.addStatement('int _k = $L.class.getName().hashCode()', className)
+
+        // Custom hash key derivation (not String.hashCode — per-build salt + prime)
+        method.addStatement('long _ha = $LL', salt)
+        method.beginControlFlow('for (byte _b : $L.class.getName().getBytes())', className)
+        method.addStatement('_ha ^= (_b & 0xFFL)')
+        method.addStatement('_ha *= $LL', prime)
+        method.endControlFlow()
+        method.addStatement('int _k = (int)(_ha ^ (_ha >>> 32))')
+
         method.addStatement('int _pc = 0')
         method.addStatement('int _op = $L', opSeed)
+        method.addStatement('int _st = 0')
 
         String arrayLit = encProg.collect { it.toString() }.join(', ')
         method.addStatement('int[] _pg = {$L}', arrayLit)
 
-        method.beginControlFlow('while (_pc < _pg.length)')
-        method.addStatement('int _oc = _pg[_pc] ^ ((_k >>> ((_pc & 3) << 3)) & 0xFF)')
-
-        // APPEND handler
-        method.beginControlFlow('if ($L)', generateMbaEquality(rng, '_oc', appendOp))
-        method.addStatement('_pc++')
-        method.addStatement('int _ch = _pg[_pc] ^ ((_k >>> ((_pc & 3) << 3)) & 0xFF)')
-        method.beginControlFlow('if ($L)', randomAlwaysTruePredicate(rng))
-        method.addStatement('_s.append((char) _ch)')
-        method.endControlFlow()
+        // Dead code before loop
         if (rng.nextBoolean()) { injectDeadCode(rng, method) }
 
-        // NOP handler
-        method.nextControlFlow('else if ($L)', generateMbaEquality(rng, '_oc', nopOp))
-        method.addStatement('_pc++')
-        method.addStatement('int _jk = _pg[_pc] ^ 0x$L', Integer.toHexString(rng.nextInt(256)).padLeft(2, '0'))
-        method.addStatement('_jk = (_jk ^ _op) + 2 * (_jk & _op)')
-        if (rng.nextBoolean()) { injectDeadCode(rng, method) }
+        // VM interpreter with non-linear execution
+        method.beginControlFlow('while (_pc >= 0 && _pc < _pg.length)')
 
-        // FAKE_JMP handler
-        method.nextControlFlow('else if ($L)', generateMbaEquality(rng, '_oc', fakeJmpOp))
-        method.addStatement('_pc++')
-        method.beginControlFlow('if ($L)', randomAlwaysTruePredicate(rng))
-        method.addStatement('int _jk2 = _pg[_pc]')
-        method.addStatement('_jk2 = ~_jk2 + 1')
-        method.nextControlFlow('else')
-        method.addStatement('_pc = _pg[_pc] & 0xFF')
-        method.endControlFlow()
+        // Decrypt with rolling state: each byte depends on all previous in execution order
+        method.addStatement('int _raw = _pg[_pc] ^ $T.rotateLeft(_k, _pc % 31) ^ (_st | (_st << 16))', Integer.class)
+        method.addStatement('_st = (_st * 31 + _raw) & 0xFFFF')
 
-        // HALT handler
-        method.nextControlFlow('else if ($L)', generateMbaEquality(rng, '_oc', haltOp))
-        method.addStatement('break')
+        // MBA-scrambled dispatch: (x ^ C) + 2*(x & C) == x + C
+        method.addStatement('int _sv = (_raw ^ $L) + 2 * (_raw & $L)', scrambleConst, scrambleConst)
 
-        // Default dead branch
-        method.nextControlFlow('else')
-        injectDeadCode(rng, method)
+        int appendCase = appendOp + scrambleConst
+        int nopCase = nopOp + scrambleConst
+        int jumpCase = jumpOp + scrambleConst
+        int haltCase = haltOp + scrambleConst
 
-        method.endControlFlow()  // if/else chain
-        method.addStatement('_pc++')
+        method.addCode('switch (_sv) {\n')
+
+        // APPEND
+        method.addCode('case $L: {\n', appendCase)
+        method.addCode('  _pc++;\n')
+        method.addCode('  int _ch = _pg[_pc] ^ Integer.rotateLeft(_k, _pc % 31) ^ (_st | (_st << 16));\n')
+        method.addCode('  _st = (_st * 31 + _ch) & 0xFFFF;\n')
+        method.addCode('  if ($L) {\n', randomAlwaysTruePredicate(rng))
+        method.addCode('    _s.append((char) _ch);\n')
+        method.addCode('  }\n')
+        if (rng.nextBoolean()) { method.addCode(generateDeadCodeBlock(rng)) }
+        method.addCode('  _pc++;\n')
+        method.addCode('  break;\n')
+        method.addCode('}\n')
+
+        // NOP
+        method.addCode('case $L: {\n', nopCase)
+        method.addCode('  _pc++;\n')
+        method.addCode('  int _nv = _pg[_pc] ^ Integer.rotateLeft(_k, _pc % 31) ^ (_st | (_st << 16));\n')
+        method.addCode('  _st = (_st * 31 + _nv) & 0xFFFF;\n')
+        method.addCode('  _nv = (_nv ^ _op) + 2 * (_nv & _op);\n')
+        if (rng.nextBoolean()) { method.addCode(generateDeadCodeBlock(rng)) }
+        method.addCode('  _pc++;\n')
+        method.addCode('  break;\n')
+        method.addCode('}\n')
+
+        // JUMP (non-linear execution)
+        method.addCode('case $L: {\n', jumpCase)
+        method.addCode('  _pc++;\n')
+        method.addCode('  int _tgt = _pg[_pc] ^ Integer.rotateLeft(_k, _pc % 31) ^ (_st | (_st << 16));\n')
+        method.addCode('  _st = (_st * 31 + _tgt) & 0xFFFF;\n')
+        method.addCode('  _pc = _tgt;\n')
+        method.addCode('  break;\n')
+        method.addCode('}\n')
+
+        // HALT
+        method.addCode('case $L: {\n', haltCase)
+        method.addCode('  _pc = -1;\n')
+        method.addCode('  break;\n')
+        method.addCode('}\n')
+
+        // Default dead path
+        method.addCode('default: {\n')
+        method.addCode(generateDeadCodeBlock(rng))
+        method.addCode('  _pc++;\n')
+        method.addCode('  break;\n')
+        method.addCode('}\n')
+
+        method.addCode('}\n')  // end switch
         method.endControlFlow()  // while
+
+        // Dead code after loop
+        if (rng.nextBoolean()) { injectDeadCode(rng, method) }
 
         method.addStatement('return _s.toString()')
 
