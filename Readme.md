@@ -1,4 +1,4 @@
-# DotEnv Gradle Plugin
+# DotEnv Gradle Plugin 
 
 A Gradle plugin to generate a `DotEnv` Java class from a `.env` file for Android and Java/Kotlin projects.  
 The generated class contains your environment variables as `public static final` fields, ready for use in your source code.
