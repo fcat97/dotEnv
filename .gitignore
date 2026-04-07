@@ -49,5 +49,6 @@ bin/
 site/node_modules/
 site/.next/
 site/out/
+site/tmp
 site/.env*.local
 local.properties
