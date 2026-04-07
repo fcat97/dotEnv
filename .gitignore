@@ -45,3 +45,9 @@ bin/
 .DS_Store
 /.idea/
 local.properties
+
+### Next.js ###
+site/.next/
+site/out/
+site/node_modules/
+site/tmp

@@ -196,3 +196,11 @@ For real-time regeneration, set up an IDE or OS file watcher to run the `generat
 Feel free to open issues or PRs for new features or bug fixes!
 
 ---
+
+## Support
+
+If you find this plugin helpful, consider buying me a coffee! ☕
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/szaman97)
+
+---
