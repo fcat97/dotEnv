@@ -1,6 +1,5 @@
 const links = [
   { label: "Built by fcat97", href: "https://fcat97.github.io/" },
-  { label: "Twitter", href: "#" },
   { label: "GitHub", href: "https://github.com/fcat97/dotEnv" },
   { label: "LinkedIn", href: "https://www.linkedin.com/in/sz97/" },
 ];
@@ -26,8 +25,8 @@ export default function Footer() {
             <a
               key={label}
               href={href}
-              target={href !== "#" ? "_blank" : undefined}
-              rel={href !== "#" ? "noopener noreferrer" : undefined}
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-xs text-on-surface-variant hover:text-secondary transition-colors"
             >
               {label}

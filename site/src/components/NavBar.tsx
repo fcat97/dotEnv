@@ -1,21 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { Star, Heart } from "lucide-react";
 
 export default function NavBar() {
   return (
     <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md flex justify-between items-center px-8 py-4">
-      <a href="/" className="text-xl font-bold text-primary font-headline tracking-tight hover:opacity-80 transition-opacity">
+      <Link href="/" className="text-xl font-bold text-primary font-headline tracking-tight hover:opacity-80 transition-opacity">
         dotEnv Gradle
-      </a>
+      </Link>
 
       <nav className="hidden md:flex items-center gap-8">
-        <a
+        <Link
           href="/docs"
           className="text-primary border-b-2 border-primary pb-1 font-headline tracking-tight text-sm"
         >
           Documentation
-        </a>
+        </Link>
 
         <div className="flex items-center gap-4">
           <a
