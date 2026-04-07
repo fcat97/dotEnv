@@ -24,9 +24,12 @@ export default function HeroSection() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-          <button className="w-full sm:w-auto bg-primary text-on-primary px-8 py-4 font-bold text-lg rounded-md hover:brightness-110 transition-all duration-300 font-headline">
+          <a
+            href="/docs"
+            className="w-full sm:w-auto bg-primary text-on-primary px-8 py-4 font-bold text-lg rounded-md hover:brightness-110 transition-all duration-300 font-headline"
+          >
             Get Started
-          </button>
+          </a>
           <a
             href="https://buymeacoffee.com/szaman97"
             target="_blank"
