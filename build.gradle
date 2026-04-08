@@ -50,3 +50,11 @@ targetCompatibility = JavaVersion.VERSION_1_8
 tasks.withType(Jar) {
     duplicatesStrategy = DuplicatesStrategy.WARN
 }
+
+test {
+    testLogging {
+        events 'started', 'passed', 'failed', 'skipped'
+        showStandardStreams = false
+        exceptionFormat = 'full'
+    }
+}

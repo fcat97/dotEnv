@@ -7,11 +7,13 @@ class DotEnvPlugin implements Plugin<Project> {
     void apply(Project project) {
         def extension = project.extensions.create("dotenv", DotEnvExtension)
 
-        def outputDir = new File(project.buildDir, "generated/dotenv/src/main/java")
+        def javaOutputDir = new File(project.buildDir, "generated/dotenv/src/main/java")
+        def kotlinOutputDir = new File(project.buildDir, "generated/dotenv/src/main/kotlin")
 
         project.tasks.register('generateDotEnv', GenerateDotEnvTask) { task ->
             task.envFilePath = project.provider { new File(project.projectDir, extension.envFilepath).absolutePath }
-            task.outputDir = outputDir.absolutePath
+            task.javaOutputDir = javaOutputDir.absolutePath
+            task.kotlinOutputDir = kotlinOutputDir.absolutePath
             task.getNamespace = { ->
                 if (extension.namespace) {
                     return extension.namespace
@@ -30,21 +32,21 @@ class DotEnvPlugin implements Plugin<Project> {
         }
 
         project.plugins.withId('java') {
-            project.sourceSets.main.java.srcDir outputDir
+            project.sourceSets.main.java.srcDir javaOutputDir
             project.tasks.named('compileJava').configure {
                 dependsOn 'generateDotEnv'
             }
         }
 
         project.plugins.withId('org.jetbrains.kotlin.jvm') {
-            project.sourceSets.main.java.srcDir outputDir
+            project.sourceSets.main.kotlin.srcDir kotlinOutputDir
             project.tasks.named('compileKotlin').configure {
                 dependsOn 'generateDotEnv'
             }
         }
 
         project.plugins.withId('org.jetbrains.kotlin.multiplatform') {
-            project.kotlin.sourceSets.commonMain.kotlin.srcDir outputDir
+            project.kotlin.sourceSets.commonMain.kotlin.srcDir kotlinOutputDir
             project.tasks.configureEach { task ->
                 if (task.name.startsWith('compile') && task.name.contains('Kotlin')) {
                     task.dependsOn('generateDotEnv')
@@ -53,17 +55,21 @@ class DotEnvPlugin implements Plugin<Project> {
         }
 
         project.plugins.withId('com.android.library') {
-            project.android.sourceSets.main.java.srcDir outputDir
+            project.android.sourceSets.main.java.srcDir javaOutputDir
             project.tasks.named('preBuild').configure {
                 dependsOn 'generateDotEnv'
             }
         }
 
         project.plugins.withId('com.android.application') {
-            project.android.sourceSets.main.java.srcDir outputDir
+            project.android.sourceSets.main.java.srcDir javaOutputDir
             project.tasks.named('preBuild').configure {
                 dependsOn 'generateDotEnv'
             }
+        }
+
+        project.plugins.withId('org.jetbrains.kotlin.android') {
+            project.android.sourceSets.main.java.srcDir kotlinOutputDir
         }
     }
 }

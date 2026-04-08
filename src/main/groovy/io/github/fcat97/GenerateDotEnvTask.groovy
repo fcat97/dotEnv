@@ -14,7 +14,10 @@ class GenerateDotEnvTask extends DefaultTask {
     def envFilePath
 
     @Input
-    String outputDir
+    String javaOutputDir
+
+    @Input
+    String kotlinOutputDir
 
     @Internal
     Closure getNamespace
@@ -40,16 +43,17 @@ class GenerateDotEnvTask extends DefaultTask {
 
         def lines = EnvParser.readLines(envFile)
         String namespace = getNamespace()
-        File outputRoot = new File(outputDir)
+        String targetType = getTargetType ? getTargetType() : 'java'
+        String resolvedOutputDir = (targetType == 'java') ? javaOutputDir : kotlinOutputDir
+        File outputRoot = new File(resolvedOutputDir)
         outputRoot.mkdirs()
 
-        String targetType = getTargetType ? getTargetType() : 'java'
         if (targetType != 'java') {
             new KotlinGenerator().generate(rng, lines, toObfuscate, namespace, outputRoot)
-            logger.lifecycle("Generated: ${outputDir}/${namespace.replace('.', '/')}/DotEnv.kt")
+            logger.lifecycle("Generated: ${resolvedOutputDir}/${namespace.replace('.', '/')}/DotEnv.kt")
         } else {
             new JavaGenerator().generate(rng, lines, toObfuscate, namespace, outputRoot)
-            logger.lifecycle("Generated: ${outputDir}/${namespace.replace('.', '/')}/DotEnv.java")
+            logger.lifecycle("Generated: ${resolvedOutputDir}/${namespace.replace('.', '/')}/DotEnv.java")
         }
     }
 }
