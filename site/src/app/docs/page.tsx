@@ -1,4 +1,4 @@
-import { Copy, Info, ShieldCheck, TriangleAlert, RefreshCw, ListChecks, Unplug } from "lucide-react";
+import { Copy, Info, ShieldCheck, TriangleAlert, RefreshCw, ListChecks, Unplug, CheckCircle2 } from "lucide-react";
 
 export default function DocsPage() {
   return (
@@ -40,7 +40,7 @@ export default function DocsPage() {
                   {"\n"}
                   <span className="text-primary">{"dotenv"}</span>
                   {" = "}
-                  <span className="text-secondary">{`"0.10.0"`}</span>
+                  <span className="text-secondary">{`"0.11.0"`}</span>
                   {"\n\n"}
                   <span className="text-outline">{`[plugins]`}</span>
                   {"\n"}
@@ -197,7 +197,92 @@ export default function DocsPage() {
         </div>
       </section>
 
-      {/* ── Section 3: Supported Formats ─────────────────────────── */}
+      {/* ── Section 3: Supported Platforms ───────────────────────── */}
+      <section className="mb-20" id="platforms">
+        <header className="mb-8">
+          <h2 className="text-4xl font-headline font-bold text-on-surface mb-4 tracking-tight">
+            Supported Platforms
+          </h2>
+          <p className="text-on-surface-variant">
+            Apply the plugin to any of these Gradle module types.
+          </p>
+        </header>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          {[
+            {
+              label: "Android Application",
+              plugin: "com.android.application",
+              output: "DotEnv.java",
+              badge: "Java",
+            },
+            {
+              label: "Android Library",
+              plugin: "com.android.library",
+              output: "DotEnv.java",
+              badge: "Java",
+            },
+            {
+              label: "Java",
+              plugin: "java",
+              output: "DotEnv.java",
+              badge: "Java",
+            },
+            {
+              label: "Kotlin / JVM",
+              plugin: "org.jetbrains.kotlin.jvm",
+              output: "DotEnv.kt",
+              badge: "Kotlin",
+            },
+            {
+              label: "Spring Boot",
+              plugin: "org.jetbrains.kotlin.jvm",
+              output: "DotEnv.kt",
+              badge: "Kotlin",
+            },
+            {
+              label: "Kotlin Multiplatform",
+              plugin: "org.jetbrains.kotlin.multiplatform",
+              output: "DotEnv.kt",
+              badge: "Kotlin",
+            },
+          ].map(({ label, plugin, output, badge }) => (
+            <div
+              key={plugin + label}
+              className="p-5 rounded-xl bg-surface-container-low ghost-border hover:bg-surface-container transition-colors"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-headline font-semibold text-on-surface text-sm">{label}</span>
+                <span
+                  className={`text-xs font-mono px-2 py-0.5 rounded-full ${
+                    badge === "Kotlin"
+                      ? "bg-secondary/10 text-secondary border border-secondary/20"
+                      : "bg-primary/10 text-primary border border-primary/20"
+                  }`}
+                >
+                  {badge}
+                </span>
+              </div>
+              <code className="text-xs font-mono text-outline block mb-2">{plugin}</code>
+              <div className="flex items-center gap-2 text-xs text-on-surface-variant">
+                <CheckCircle2 size={12} className="text-secondary shrink-0" />
+                generates <code className="font-mono text-secondary">{output}</code>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-start gap-4 p-4 bg-primary/5 border-l-4 border-primary rounded">
+          <Info size={18} className="text-primary mt-0.5 shrink-0" />
+          <p className="text-sm text-on-surface-variant">
+            Java / Android modules receive a <code className="font-mono text-primary">DotEnv.java</code> file;
+            Kotlin and KMP modules receive a <code className="font-mono text-secondary">DotEnv.kt</code> file.
+            The plugin auto-detects which generator to use based on the applied Gradle plugins.
+          </p>
+        </div>
+      </section>
+
+      {/* ── Section 4: Supported Formats ─────────────────────────── */}
       <section className="mb-20" id="formats">
         <header className="mb-8">
           <h2 className="text-4xl font-headline font-bold text-on-surface mb-4 tracking-tight">
@@ -212,7 +297,7 @@ export default function DocsPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-container-low">
-                {["Format", "Generated Java Type", "Example .env entry"].map((h) => (
+                {["Format", "Java Type", "Kotlin Type", "Example .env entry"].map((h) => (
                   <th
                     key={h}
                     className="p-4 font-headline font-medium text-primary border-b border-outline-variant/20"
@@ -224,18 +309,21 @@ export default function DocsPage() {
             </thead>
             <tbody className="text-sm">
               {[
-                { format: "Simple string",           type: "public static final String",   example: "API_KEY=abc123" },
-                { format: "Double-quoted string",    type: "public static final String",   example: 'URL="https://foo.com"' },
-                { format: "Boolean",                 type: "public static final boolean",  example: "IS_PROD=true" },
-                { format: "Long integer",            type: "public static final long",     example: "TIMEOUT=1234" },
-                { format: "Double / float",          type: "public static final double",   example: "PI=3.1415" },
-                { format: "JSON-style list",         type: "public static final String[]", example: 'PLATFORMS=["android","desktop"]' },
-                { format: "Comma-separated list",    type: "public static final String[]", example: "LANGUAGES=en,fr,es" },
-              ].map(({ format, type, example }) => (
+                { format: "Simple string",                     java: "public static final String",    kt: "const val … : String",       example: "API_KEY=abc123" },
+                { format: "Double-quoted string",              java: "public static final String",    kt: "const val … : String",       example: 'URL="https://foo.com"' },
+                { format: "Single-quoted string",              java: "public static final String",    kt: "const val … : String",       example: "TOKEN='my-secret'" },
+                { format: "Empty value (KEY= / '' / \"\")",    java: "public static final String",    kt: "const val … : String",       example: 'KEY=' },
+                { format: "Boolean (case-insensitive)",        java: "public static final boolean",   kt: "const val … : Boolean",      example: "IS_PROD=true / True / TRUE" },
+                { format: "Long integer (optional L/l suffix)",java: "public static final long",      kt: "const val … : Long",         example: "TIMEOUT=1234 / MAX=99L" },
+                { format: "Double / float",                    java: "public static final double",    kt: "const val … : Double",       example: "PI=3.1415 / RATIO=-0.5" },
+                { format: "JSON-style list",                   java: "public static final String[]",  kt: "val … : Array<String>",      example: 'PLATFORMS=["android","desktop"]' },
+                { format: "Comma-separated list",              java: "public static final String[]",  kt: "val … : Array<String>",      example: "LANGUAGES=en,fr,es" },
+              ].map(({ format, java: javaType, kt, example }) => (
                 <tr key={format} className="hover:bg-surface-container-high transition-colors">
                   <td className="p-4 border-b border-outline-variant/10 text-on-surface-variant">{format}</td>
-                  <td className="p-4 border-b border-outline-variant/10 font-mono text-secondary text-xs">{type}</td>
-                  <td className="p-4 border-b border-outline-variant/10 font-mono text-on-surface">{example}</td>
+                  <td className="p-4 border-b border-outline-variant/10 font-mono text-primary text-xs">{javaType}</td>
+                  <td className="p-4 border-b border-outline-variant/10 font-mono text-secondary text-xs">{kt}</td>
+                  <td className="p-4 border-b border-outline-variant/10 font-mono text-on-surface text-xs">{example}</td>
                 </tr>
               ))}
             </tbody>
@@ -244,15 +332,24 @@ export default function DocsPage() {
 
         <div className="flex items-start gap-4 p-4 mt-4 bg-secondary/5 border-l-4 border-secondary rounded">
           <Info size={18} className="text-secondary mt-0.5 shrink-0" />
-          <p className="text-sm text-on-surface-variant">
-            Double-quoted strings have the quotes automatically stripped. Only{" "}
-            <code className="font-mono text-primary">String</code> fields may be added to the{" "}
-            <code className="font-mono text-primary">obfuscate</code> list — other types will fail the build.
-          </p>
+          <div className="text-sm text-on-surface-variant space-y-1">
+            <p>
+              Values are matched in priority order: <strong>list → boolean → long → double → string</strong>.
+              Quotes are automatically stripped from single- and double-quoted strings.
+            </p>
+            <p>
+              Malformed numbers (e.g. <code className="font-mono text-primary">100.</code>,{" "}
+              <code className="font-mono text-primary">1.2.3</code>,{" "}
+              <code className="font-mono text-primary">--100</code>) are kept as{" "}
+              <code className="font-mono text-primary">String</code>. Only{" "}
+              <code className="font-mono text-primary">String</code> fields may be added to the{" "}
+              <code className="font-mono text-primary">obfuscate</code> list — other types will fail the build.
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* ── Section 4: Obfuscation / Security ────────────────────── */}
+      {/* ── Section 5: Obfuscation / Security ────────────────────── */}
       <section className="mb-20" id="security">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
           <div>
@@ -320,7 +417,7 @@ export default function DocsPage() {
         </div>
       </section>
 
-      {/* ── Section 5: Troubleshooting ───────────────────────────── */}
+      {/* ── Section 6: Troubleshooting ───────────────────────────── */}
       <section className="mb-20" id="examples">
         <header className="mb-8">
           <h2 className="text-4xl font-headline font-bold text-on-surface mb-4 tracking-tight">

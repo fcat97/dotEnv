@@ -20,9 +20,21 @@ export default function HeroSection() {
         </p>
 
         <p className="text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
-          Generate typed Java constants from .env files for your Android and JVM
-          projects. Secure, modular, and built for Gradle.
+          Generate typed constants from <code className="font-mono text-primary">.env</code> files for Android, Java, Kotlin/JVM, Spring Boot, and Kotlin Multiplatform projects.
+          Secure, modular, and built for Gradle.
         </p>
+
+        {/* Supported platform chips */}
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+          {["Android", "Java", "Kotlin/JVM", "Spring Boot", "KMP"].map((p) => (
+            <span
+              key={p}
+              className="px-3 py-1 text-xs font-mono rounded-full bg-primary/10 text-primary border border-primary/20"
+            >
+              {p}
+            </span>
+          ))}
+        </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
           <Link

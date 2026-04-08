@@ -60,9 +60,9 @@ DEBUG_ENABLED=true`}
                 <span className="text-on-surface-variant">;</span>
                 {"\n"}
                 {"    "}
-                <span className="text-primary">public static final int</span>
+                <span className="text-primary">public static final long</span>
                 <span className="text-on-surface-variant"> MAX_RETRIES = </span>
-                <span className="text-tertiary">3</span>
+                <span className="text-tertiary">3L</span>
                 <span className="text-on-surface-variant">;</span>
                 {"\n"}
                 {"    "}

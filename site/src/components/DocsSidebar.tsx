@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Rocket, Settings, ShieldCheck, FileText } from "lucide-react";
+import { Rocket, Settings, ShieldCheck, FileText, Layers, Table2 } from "lucide-react";
 
 const navItems = [
   { id: "getting-started", label: "Getting Started", icon: Rocket },
   { id: "configuration",   label: "Configuration",  icon: Settings },
+  { id: "platforms",       label: "Platforms",       icon: Layers },
+  { id: "formats",         label: "Supported Formats", icon: Table2 },
   { id: "security",        label: "Security",        icon: ShieldCheck },
-  { id: "examples",        label: "Examples",        icon: FileText },
+  { id: "examples",        label: "Troubleshooting", icon: FileText },
 ];
 
 export default function DocsSidebar() {
@@ -40,7 +42,7 @@ export default function DocsSidebar() {
             rel="noopener noreferrer"
             className="hover:text-primary transition-colors"
           >
-            v0.10.0
+            v0.11.0
           </a>
         </p>
       </div>
