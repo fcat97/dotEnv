@@ -49,10 +49,14 @@ class GenerateDotEnvTask extends DefaultTask {
         outputRoot.mkdirs()
 
         if (targetType != 'java') {
-            new KotlinGenerator().generate(rng, lines, toObfuscate, namespace, outputRoot)
+            def gen = new KotlinGenerator()
+            gen.generate(rng, lines, toObfuscate, namespace, outputRoot)
+            gen.warnings.each { logger.warn(it) }
             logger.lifecycle("Generated: ${resolvedOutputDir}/${namespace.replace('.', '/')}/DotEnv.kt")
         } else {
-            new JavaGenerator().generate(rng, lines, toObfuscate, namespace, outputRoot)
+            def gen = new JavaGenerator()
+            gen.generate(rng, lines, toObfuscate, namespace, outputRoot)
+            gen.warnings.each { logger.warn(it) }
             logger.lifecycle("Generated: ${resolvedOutputDir}/${namespace.replace('.', '/')}/DotEnv.java")
         }
     }

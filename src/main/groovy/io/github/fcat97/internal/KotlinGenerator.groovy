@@ -13,6 +13,8 @@ import com.squareup.kotlinpoet.TypeSpec as KTypeSpec
  */
 class KotlinGenerator extends VmObfuscatorBase {
 
+    final List<String> warnings = []
+
     void generate(Random rng, List<String> lines, List<String> toObfuscate, String namespace, File outputRoot) {
         def objectBuilder = KTypeSpec.objectBuilder("DotEnv")
         Map<String, String> helperNames = [:]
@@ -26,7 +28,8 @@ class KotlinGenerator extends VmObfuscatorBase {
                 return k == key
             }
             if (matchLine == null) {
-                throw new IllegalArgumentException("dotenv: obfuscate field '${fieldName}' not found in .env file")
+                warnings << "dotenv: obfuscate key '${fieldName}' not found in .env file — skipping."
+                return
             }
             def parts = matchLine.split('=', 2)
             String rawVal = EnvParser.stripQuotes(parts[1].trim())

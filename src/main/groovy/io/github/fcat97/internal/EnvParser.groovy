@@ -40,8 +40,11 @@ class EnvParser {
 
     /** Strip surrounding double-quotes from a value if present. */
     static String stripQuotes(String value) {
-        if (value.startsWith('"') && value.endsWith('"') && value.length() >= 2) {
-            return value.substring(1, value.length() - 1)
+        if (value.length() >= 2) {
+            if ((value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith("'") && value.endsWith("'"))) {
+                return value.substring(1, value.length() - 1)
+            }
         }
         return value
     }

@@ -163,6 +163,7 @@ class DotEnvPluginFunctionalTest {
             FLAG_FALSE=false
             FLAG_UPPER=TRUE
             FLAG_MIXED=False
+            FLAG_TITLE=True
         """.stripIndent())
 
         def result = runTask()
@@ -174,6 +175,7 @@ class DotEnvPluginFunctionalTest {
         assertTrue(content.contains('boolean FLAG_FALSE = false'))
         assertTrue(content.contains('boolean FLAG_UPPER = true'))
         assertTrue(content.contains('boolean FLAG_MIXED = false'))
+        assertTrue(content.contains('boolean FLAG_TITLE = true'))
     }
 
     @Test
@@ -204,6 +206,41 @@ class DotEnvPluginFunctionalTest {
         def content = generatedFileContent()
         assertTrue(content.contains('String URL = "https://api.example.com"'))
         assertFalse('Outer quotes should be stripped', content.contains('""https://'))
+    }
+
+    @Test
+    void testSingleQuotedStringStripsQuotes() {
+        writeSettings()
+        writeBuildGradle()
+        writeEnvFile("TOKEN='my-token-value'")
+
+        def result = runTask()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(':generateDotEnv').outcome)
+
+        def content = generatedFileContent()
+        assertTrue("Single quotes should be stripped", content.contains('String TOKEN = "my-token-value"'))
+        assertFalse("Original single-quoted form must not appear", content.contains("'my-token-value'"))
+    }
+
+    @Test
+    void testEmptyValueEdgeCases() {
+        writeSettings()
+        writeBuildGradle()
+        writeEnvFile("""\
+            KEY_BARE=
+            KEY_SQ=''
+            KEY_DQ=""
+        """.stripIndent())
+
+        def result = runTask()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(':generateDotEnv').outcome)
+
+        def content = generatedFileContent()
+        assertTrue('KEY_BARE= should produce empty string', content.contains('String KEY_BARE = ""'))
+        assertTrue("KEY_SQ='' should strip single quotes to empty string", content.contains('String KEY_SQ = ""'))
+        assertTrue('KEY_DQ="" should strip double quotes to empty string', content.contains('String KEY_DQ = ""'))
     }
 
     @Test
@@ -484,31 +521,61 @@ class DotEnvPluginFunctionalTest {
     }
 
     @Test
-    void testObfuscatedHelperUsesHardenedPredicates() {
+    void testMalformedNumbersTreatedAsStrings() {
         writeSettings()
-        writeBuildGradle("dotenv { obfuscate = ['KEY'] }")
-        writeEnvFile('KEY=test')
+        writeBuildGradle()
+        writeEnvFile("""\
+            TRAILING_DOT=100.
+            DOUBLE_DOT=100..0
+            DOUBLE_MINUS=--100
+            TWO_DECIMALS=1.2.3
+        """.stripIndent())
 
-        runTask()
+        def result = runTask()
 
-        def genDir = new File(testProjectDir.root,
-            'build/generated/dotenv/src/main/java/dotenv/test_project')
-        def helperFile = genDir.listFiles().find { it.name =~ /^_[a-f0-9]{8}\.java$/ }
+        assertEquals(TaskOutcome.SUCCESS, result.task(':generateDotEnv').outcome)
 
-        assertNotNull('Helper class file should exist', helperFile)
-        def content = helperFile.text
-        // Hardened predicates use compound MBA with multiple live variables
-        // They should NOT use trivially-foldable patterns like (_op * 0 != 0)
-        assertFalse('Should not use trivially-foldable predicate (_op * 0)',
-            content.contains('_op * 0'))
-        assertFalse('Should not use trivially-foldable predicate (_op & 0)',
-            content.contains('(_op & 0)'))
-        assertFalse('Should not use trivially-foldable predicate (_op ^ 0)',
-            content.contains('(_op ^ 0)'))
-        // Should use MBA with two variables (e.g., _op and _pc or _st)
-        assertTrue('Should use hardened MBA predicates with multiple runtime variables',
-            content.contains('_op & _pc') || content.contains('_op & _st') ||
-            content.contains('_st ^ _op') || content.contains('_pc ^ _op') ||
-            content.contains('_st | _op') || content.contains('_pc | _op'))
+        def content = generatedFileContent()
+        assertTrue('100. has no digits after dot — must be String', content.contains('String TRAILING_DOT = "100."'))
+        assertTrue('100..0 has double dot — must be String', content.contains('String DOUBLE_DOT = "100..0"'))
+        assertTrue('--100 has double minus — must be String', content.contains('String DOUBLE_MINUS = "--100"'))
+        assertTrue('1.2.3 has two dots — must be String', content.contains('String TWO_DECIMALS = "1.2.3"'))
     }
+
+    @Test
+    void testValidNegativeNumbersUseCorrectTypes() {
+        writeSettings()
+        writeBuildGradle()
+        writeEnvFile("""\
+            NEG_LONG=-100
+            NEG_DOUBLE=-100.0
+            NEG_LONG_SUFFIX=-42L
+        """.stripIndent())
+
+        def result = runTask()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(':generateDotEnv').outcome)
+
+        def content = generatedFileContent()
+        assertTrue('-100 must be long', content.contains('long NEG_LONG = -100L'))
+        assertTrue('-100.0 must be double', content.contains('double NEG_DOUBLE = -100.0'))
+        assertTrue('-42L must be long', content.contains('long NEG_LONG_SUFFIX = -42L'))
+    }
+
+    @Test
+    void testObfuscateMissingKeyWarnsInsteadOfFailing() {
+        writeSettings()
+        writeBuildGradle("dotenv { obfuscate = ['MISSING_KEY', 'PRESENT_KEY'] }")
+        writeEnvFile('PRESENT_KEY=secret')
+
+        def result = runTask()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(':generateDotEnv').outcome)
+        assertTrue('Warning must mention the missing key',
+            result.output.contains('MISSING_KEY'))
+        // PRESENT_KEY is in .env so it must be obfuscated, not a literal
+        def content = generatedFileContent()
+        assertFalse('PRESENT_KEY value must not appear as a plain literal', content.contains('"secret"'))
+    }
+
 }

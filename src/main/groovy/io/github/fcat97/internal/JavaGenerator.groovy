@@ -9,9 +9,13 @@ import javax.lang.model.element.Modifier
  */
 class JavaGenerator extends VmObfuscatorBase {
 
+    final List<String> warnings = []
+
     void generate(Random rng, List<String> lines, List<String> toObfuscate, String namespace, File outputRoot) {
         TypeSpec.Builder classBuilder = TypeSpec.classBuilder("DotEnv")
                 .addModifiers(Modifier.PUBLIC)
+
+        Set<String> matchedObfuscateKeys = new HashSet<>()
 
         lines.each { line ->
             def (key, value) = line.split('=', 2)
@@ -30,6 +34,7 @@ class JavaGenerator extends VmObfuscatorBase {
             }
 
             if (shouldObfuscate) {
+                matchedObfuscateKeys << key
                 String helperName = "_" + generateRandomHex(rng, 8)
                 JavaFile.builder(namespace, generateObfuscatedClass(rng, helperName, value, namespace)).build().writeTo(outputRoot)
                 classBuilder.addField(FieldSpec.builder(String, key)
@@ -75,6 +80,13 @@ class JavaGenerator extends VmObfuscatorBase {
                         .initializer("\$S", value)
                         .build()
                 )
+            }
+        }
+
+        toObfuscate.each { fieldName ->
+            String key = fieldName.toUpperCase().replaceAll(/[^A-Z0-9_]/, '_')
+            if (!matchedObfuscateKeys.contains(key)) {
+                warnings << "dotenv: obfuscate key '${fieldName}' not found in .env file — skipping."
             }
         }
 
