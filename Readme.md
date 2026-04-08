@@ -131,8 +131,8 @@ On build, the plugin generates:
 - **Kotlin/JVM, Kotlin Multiplatform** → `DotEnv.kt`
 
 ```
-build/generated/dotenv/src/main/java/dotenv/{module-name}/DotEnv.java   (Java/Android)
-build/generated/dotenv/src/main/java/dotenv/{module-name}/DotEnv.kt     (Kotlin/KMP)
+build/generated/dotenv/src/main/java/dotenv/{module-name}/DotEnv.java    (Java/Android)
+build/generated/dotenv/src/main/kotlin/dotenv/{module-name}/DotEnv.kt    (Kotlin/KMP)
 ```
 
 ### 5. Use in your code
@@ -163,15 +163,29 @@ val platforms: Array<String> = DotEnv.PLATFORMS
 
 ## Supported `.env` Formats
 
-| Format                                   | Java (`DotEnv.java`)                           | Kotlin (`DotEnv.kt`)         | Example                           |
+Values are matched in priority order: list → boolean → long → double → string.
+
+| `.env` value form                        | Inferred type / Java                           | Kotlin                       | Example                           |
 |------------------------------------------|------------------------------------------------|------------------------------|-----------------------------------|
 | Simple string                            | `public static final String`                   | `const val … : String`       | `API_KEY=abc123`                  |
-| Double-quoted string                     | `public static final String` (quotes stripped) | `const val … : String`       | `URL="https://foo.com"`           |
-| Boolean                                  | `public static final boolean`                  | `const val … : Boolean`      | `IS_PROD=true`                    |
-| Long integer                             | `public static final long`                     | `const val … : Long`         | `TIMEOUT=1234`                    |
-| Double/float                             | `public static final double`                   | `const val … : Double`       | `PI=3.1415`                       |
-| JSON-style list (`[a, b, c]`)            | `public static final String[]`                 | `val … : Array<String>`      | `PLATFORMS=["android","desktop"]` |
+| Double-quoted string (quotes stripped)   | `public static final String`                   | `const val … : String`       | `URL="https://foo.com"`           |
+| Single-quoted string (quotes stripped)   | `public static final String`                   | `const val … : String`       | `TOKEN='my-secret'`               |
+| Empty value (`KEY=`, `KEY=''`, `KEY=""`) | `public static final String` (`""`)            | `const val … : String` (`""`)| `KEY=`                            |
+| Boolean (case-insensitive)               | `public static final boolean`                  | `const val … : Boolean`      | `IS_PROD=true` / `True` / `TRUE`  |
+| Long integer (optional `L`/`l` suffix)   | `public static final long`                     | `const val … : Long`         | `TIMEOUT=1234` / `MAX=99L`        |
+| Double / float                           | `public static final double`                   | `const val … : Double`       | `PI=3.1415` / `RATIO=-0.5`        |
+| JSON-style list (`["a","b"]`)            | `public static final String[]`                 | `val … : Array<String>`      | `PLATFORMS=["android","desktop"]` |
 | Comma-separated list (`a,b,c`)           | `public static final String[]`                 | `val … : Array<String>`      | `LANGUAGES=en,fr,es`              |
+
+> **Malformed numbers are treated as strings.**
+> Values like `100.` (no digits after the dot), `100..0` (double dot), `--100` (double minus), or `1.2.3` do not match any numeric type and are safely kept as `String`.
+
+### Type inference rules
+
+- **Boolean** — value equals `true` or `false` (case-insensitive). `True`, `TRUE`, `False`, `FALSE` all work.
+- **Long** — digits only, with an optional leading `-` and optional `L`/`l` suffix (e.g. `1000`, `-42`, `99L`).
+- **Double** — must have at least one digit after the decimal point, with an optional leading `-` and optional scientific notation (e.g. `3.14`, `-0.5`, `1.2e10`). Values like `100.` (no fractional part) fall back to `String`.
+- **String** — anything that doesn't match the above, including empty values, URLs, and malformed numbers.
 
 ### Example: Kotlin generated output
 
@@ -203,7 +217,7 @@ object DotEnv {
 
 ## Obfuscation
 
-Sensitive `String` fields can be obfuscated so the plaintext value never appears as a string literal in the compiled output (class files, DEX, JS, WASM, or native binaries).
+Sensitive `String` fields can be obfuscated so the plaintext value never appears as a string literal in compiled output (class files, DEX, JS, WASM, or native binaries).
 
 ```groovy
 dotenv {
@@ -211,25 +225,19 @@ dotenv {
 }
 ```
 
-For each obfuscated field, the plugin generates a private helper file (e.g. `_a3f2b9.kt`) alongside `DotEnv.kt`. The helper uses a small custom VM interpreter to reconstruct the value at runtime without ever storing it as a plain string literal. The VM uses:
+When a field is listed in `obfuscate`, the plugin generates a small private helper file alongside `DotEnv` (e.g. `_a3f2b9.kt`). At runtime, the helper reconstructs the original value using a multi-layer encoding scheme — no plain string literal is ever written to disk or embedded in the binary. `DotEnv` delegates to it transparently:
 
-- A randomised opcode set (changed every build)
-- Non-linear bytecode execution via JUMP opcodes (shuffled physical block order)
-- Rolling-state XOR decryption (each byte depends on all previously decoded bytes)
-- MBA-scrambled opcode dispatch (defeats symbolic execution tools)
-- Dead code injection (increases reverse-engineering effort)
-
-`DotEnv.kt` delegates obfuscated fields transparently:
 ```kotlin
 val API_KEY: String = _a3f2b9.get()  // value reconstructed at runtime
 ```
 
-Consumer code is unchanged — access is identical to non-obfuscated fields.
+Consumer code is completely unchanged — access is identical to non-obfuscated fields.
 
-**Limitations:**
+**Things to know:**
 - Only `String` fields can be obfuscated. Listing a `boolean`, `long`, `double`, or `Array<String>` field in `obfuscate` will fail the build.
-- The Kotlin helper is safe for all Kotlin targets (JVM, JS, WASM, Native) — no JVM reflection is used.
-- A determined reverse-engineer can still recover values by tracing VM execution, but it is significantly harder than reading a plain string literal.
+- If a key is listed in `obfuscate` but is absent from the `.env` file, the build **succeeds** and a warning is emitted — no field is generated for that key.
+- The encoding is randomised on every build, so the helper file looks different each time even for the same value.
+- A sufficiently determined reverse-engineer can still recover values by tracing runtime execution; obfuscation raises the bar but is not a substitute for proper secret management.
 
 ---
 
@@ -254,7 +262,7 @@ For real-time regeneration, set up an IDE or OS file watcher to run the `generat
 - If the `DotEnv` class isn't found, try:
   - Cleaning and rebuilding the project.
   - Ensuring the `.env` file exists in the module root.
-  - Checking `build/generated/dotenv/src/main/java/{your/namespace}/DotEnv.java` (Java/Android) or `DotEnv.kt` (Kotlin/KMP) for the generated file.
+  - Checking `build/generated/dotenv/src/main/java/{your/namespace}/DotEnv.java` (Java/Android) or `build/generated/dotenv/src/main/kotlin/{your/namespace}/DotEnv.kt` (Kotlin/KMP) for the generated file.
   - For Kotlin projects, ensure the `kotlin("jvm")` or `kotlin("multiplatform")` plugin is applied — the plugin automatically selects the correct generator.
 
 ---
