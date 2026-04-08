@@ -1,0 +1,55 @@
+package io.github.fcat97
+
+import io.github.fcat97.internal.EnvParser
+import io.github.fcat97.internal.JavaGenerator
+import io.github.fcat97.internal.KotlinGenerator
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.provider.Provider
+import org.gradle.api.tasks.*
+
+class GenerateDotEnvTask extends DefaultTask {
+
+    @Input
+    def envFilePath
+
+    @Input
+    String outputDir
+
+    @Internal
+    Closure getNamespace
+
+    @Internal
+    Closure getTargetType
+
+    @Input
+    def obfuscatedFields = []
+
+    @TaskAction
+    void generate() {
+        Random rng = new Random()
+        String resolvedPath = envFilePath instanceof Provider ? envFilePath.get() : envFilePath
+        File envFile = new File(resolvedPath)
+        if (!envFile.exists()) {
+            throw new GradleException(".env file not found: ${resolvedPath}. Create a .env file in the module root or set 'envFilepath' in the dotenv block.")
+        }
+
+        List<String> toObfuscate = ((obfuscatedFields instanceof Provider
+            ? obfuscatedFields.get()
+            : obfuscatedFields) ?: []) as List<String>
+
+        def lines = EnvParser.readLines(envFile)
+        String namespace = getNamespace()
+        File outputRoot = new File(outputDir)
+        outputRoot.mkdirs()
+
+        String targetType = getTargetType ? getTargetType() : 'java'
+        if (targetType != 'java') {
+            new KotlinGenerator().generate(rng, lines, toObfuscate, namespace, outputRoot)
+            logger.lifecycle("Generated: ${outputDir}/${namespace.replace('.', '/')}/DotEnv.kt")
+        } else {
+            new JavaGenerator().generate(rng, lines, toObfuscate, namespace, outputRoot)
+            logger.lifecycle("Generated: ${outputDir}/${namespace.replace('.', '/')}/DotEnv.java")
+        }
+    }
+}
