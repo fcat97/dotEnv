@@ -511,4 +511,55 @@ class DotEnvPluginFunctionalTest {
             content.contains('_st ^ _op') || content.contains('_pc ^ _op') ||
             content.contains('_st | _op') || content.contains('_pc | _op'))
     }
+
+    // ── Kotlin JVM compatibility ─────────────────────────────────────────────
+
+    @Test
+    void testKotlinJvmProjectGeneratesAndCompilesCorrectly() {
+        testProjectDir.newFile('settings.gradle').text = """\
+            pluginManagement {
+                repositories {
+                    gradlePluginPortal()
+                    mavenCentral()
+                }
+            }
+            rootProject.name = 'test-project'
+        """.stripIndent()
+
+        testProjectDir.newFile('build.gradle').text = """\
+            plugins {
+                id 'org.jetbrains.kotlin.jvm' version '1.9.25'
+                id 'io.github.fcat97.dotenv'
+            }
+            repositories { mavenCentral() }
+        """.stripIndent()
+
+        testProjectDir.newFile('.env').text = """\
+            API_KEY=kotlin-secret
+            IS_DEBUG=false
+        """.stripIndent()
+
+        // Kotlin source file that references the generated DotEnv class
+        def srcDir = testProjectDir.newFolder('src', 'main', 'kotlin', 'example')
+        new File(srcDir, 'App.kt').text = """\
+            package example
+            import dotenv.test_project.DotEnv
+            fun getKey(): String = DotEnv.API_KEY
+            fun isDebug(): Boolean = DotEnv.IS_DEBUG
+        """.stripIndent()
+
+        def result = GradleRunner.create()
+            .withProjectDir(testProjectDir.root)
+            .withArguments('compileKotlin', '--stacktrace')
+            .withPluginClasspath()
+            .build()
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(':generateDotEnv').outcome)
+        assertEquals(TaskOutcome.SUCCESS, result.task(':compileKotlin').outcome)
+
+        def content = new File(testProjectDir.root,
+            'build/generated/dotenv/src/main/java/dotenv/test_project/DotEnv.java').text
+        assertTrue(content.contains('String API_KEY = "kotlin-secret"'))
+        assertTrue(content.contains('boolean IS_DEBUG = false'))
+    }
 }

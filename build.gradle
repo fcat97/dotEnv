@@ -17,7 +17,7 @@ gradlePlugin {
             implementationClass = 'io.github.fcat97.DotEnvPlugin'
             displayName = 'DotEnv Gradle Plugin'
             description = 'Generate a module-specific POJO class from .env file for Java and Android projects.'
-            tags.set(['dotenv', 'env', 'java', 'android', 'android-library', 'configuration'])
+            tags.set(['dotenv', 'env', 'java', 'android', 'android-library', 'kotlin', 'spring-boot', 'backend', 'jvm', 'configuration'])
         }
     }
 }

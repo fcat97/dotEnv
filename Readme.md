@@ -1,6 +1,6 @@
 # DotEnv Gradle Plugin
 
-A Gradle plugin to generate a `DotEnv` Java class from a `.env` file for Android and Java/Kotlin projects.  
+A Gradle plugin to generate a `DotEnv` Java class from a `.env` file for Android, Java, and Kotlin/JVM projects.  
 The generated class contains your environment variables as `public static final` fields, ready for use in your source code.
 
 ---
@@ -38,7 +38,7 @@ This is particularly useful for modularized Android or Java projects where each 
 ## Features
 
 - **Automatic code generation**: Generates a Java class at build time.
-- **Works for Android & Java modules**: Supports both `com.android.library`/`com.android.application` and `java` plugins.
+- **Works for Android, Java & Kotlin/JVM modules**: Supports `com.android.library`, `com.android.application`, `java`, and `org.jetbrains.kotlin.jvm` plugins (including Spring Boot).
 - **Supports primitives**: Recognizes boolean, long, double, and generates appropriately typed fields.
 - **List support**: Recognizes JSON-style and comma-separated lists and creates a `String[]` field.
 - **Namespace per module**: Each module gets its own DotEnv class in a unique package.
@@ -55,8 +55,17 @@ Add to your module-level `build.gradle`:
 
 ```groovy
 plugins {
-    id 'java' // or 'com.android.library' or 'com.android.application'
+    id 'java' // or 'com.android.library', 'com.android.application', 'org.jetbrains.kotlin.jvm'
     id 'io.github.fcat97.dotenv'
+}
+```
+
+Or with Kotlin DSL (`build.gradle.kts`):
+
+```kotlin
+plugins {
+    kotlin("jvm") version "1.9.25" // or id("java"), etc.
+    id("io.github.fcat97.dotenv")
 }
 ```
 
@@ -183,11 +192,18 @@ For real-time regeneration, set up an IDE or OS file watcher to run the `generat
 
 ## Troubleshooting
 
+If using Kotlin, you can access constants the same way as in Java:
+
+```kotlin
+val apiKey: String = DotEnv.API_KEY
+val isProd: Boolean = DotEnv.IS_PROD
+val timeout: Long = DotEnv.TIMEOUT
+```
+
 - If the `DotEnv` class isn't found, try:
   - Cleaning and rebuilding the project.
   - Ensuring the `.env` file exists in the module root.
   - Checking `build/generated/dotenv/src/main/java/{your/namespace}/DotEnv.java` for the generated file.
-- If using Kotlin, you can access constants the same way as in Java.
 
 ---
 

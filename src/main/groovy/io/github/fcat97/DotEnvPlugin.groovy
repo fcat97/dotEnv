@@ -40,6 +40,13 @@ class DotEnvPlugin implements Plugin<Project> {
             }
         }
 
+        project.plugins.withId('org.jetbrains.kotlin.jvm') {
+            project.sourceSets.main.java.srcDir outputDir
+            project.tasks.named('compileKotlin').configure {
+                dependsOn 'generateDotEnv'
+            }
+        }
+
         project.plugins.withId('com.android.library') {
             project.android.sourceSets.main.java.srcDir outputDir
             project.tasks.named('preBuild').configure {
